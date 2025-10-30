@@ -660,13 +660,32 @@
       const meta = this.__rcs_meta;
       const start = Date.now();
       this.addEventListener("loadend", () => {
-        reqLog.unshift({
+        const entry = {
           ...meta,
           duration: Date.now() - start,
           status: this.status,
           ok: this.status >= 200 && this.status < 300,
-        });
+        };
+        reqLog.unshift(entry);
         if (reqLog.length > 120) reqLog.pop();
+
+        // joga no console também se for erro
+        if (
+          !entry.ok &&
+          window.RCSHub &&
+          Array.isArray(window.RCSHub.consoleBuffer)
+        ) {
+          window.RCSHub.consoleBuffer.unshift({
+            type: "network-error",
+            ts: entry.ts,
+            args: [
+              `${entry.method} ${entry.url}`,
+              `status ${entry.status}`,
+              `${entry.duration}ms`,
+            ],
+            indent: 0,
+          });
+        }
       });
       return origSend.call(this, body);
     };

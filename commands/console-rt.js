@@ -1,15 +1,14 @@
 // src/commands/console-rt.js
 (function (RCSHub) {
-  const BUFFER_LIMIT = 300; // mais profundo
-  const INDENT_STEP = 14; // px por nível de group()
-  const MAX_STRING = 10_000; // corta payloads gigantes
+  const BUFFER_LIMIT = 300;
+  const INDENT_STEP = 14;
+  const MAX_STRING = 10_000;
   const buffer = RCSHub.consoleBuffer || [];
   const timers = RCSHub.__consoleTimers || new Map();
   const counters = RCSHub.__consoleCounters || new Map();
   let groupLevel = RCSHub.__consoleGroupLevel || 0;
-  const mimicConsoleClear = false; // true = limpa buffer no console.clear()
 
-  // ===== util: safe stringify (circular / tipos especiais) =====
+  // ===== utils =====
   function safePreview(v, depth = 0, seen = new Set()) {
     try {
       if (v === null) return "null";
@@ -33,26 +32,18 @@
       if (seen.has(v)) return "[Circular]";
       if (depth > 3) return "[Object]";
       seen.add(v);
-      if (Array.isArray(v)) {
+      if (Array.isArray(v))
         return `[${v.map((x) => safePreview(x, depth + 1, seen)).join(", ")}]`;
-      }
-      // plain object-ish
       const out = {};
-      const keys = Object.keys(v).slice(0, 100);
+      const keys = Object.keys(v).slice(0, 80);
       for (const k of keys) out[k] = safePreview(v[k], depth + 1, seen);
       return JSON.stringify(out);
-    } catch (e) {
-      try {
-        return JSON.stringify(v);
-      } catch {
-        return String(v);
-      }
+    } catch {
+      return String(v);
     }
   }
 
-  // ===== util: tiny table extractor =====
   function toTableData(arg) {
-    // console.table aceita array de objetos, objeto, Map, etc. Vamos cobrir os comuns.
     if (Array.isArray(arg) && arg.every((row) => typeof row === "object")) {
       const cols = Array.from(
         new Set(arg.flatMap((r) => Object.keys(r)))
@@ -77,7 +68,7 @@
     if (buffer.length > BUFFER_LIMIT) buffer.pop();
   }
 
-  // ===== hook apenas uma vez =====
+  // ===== 1) hook completo do console =====
   if (!RCSHub.__consoleHookedAll) {
     const orig = {};
     const methods = [
@@ -100,15 +91,11 @@
       "clear",
       "count",
       "countReset",
-      // profile/profileEnd/timeStamp não são consistentes; adiciona se quiser
     ];
-
-    // guarda originais
     methods.forEach(
       (m) => (orig[m] = console[m] ? console[m].bind(console) : undefined)
     );
 
-    // básicos
     function wrapSimple(type) {
       return function (...args) {
         pushEvent({ type, ts: Date.now(), args, indent: groupLevel });
@@ -119,8 +106,10 @@
     console.log = wrapSimple("log");
     console.info = wrapSimple("info");
     console.warn = wrapSimple("warn");
+    console.debug = wrapSimple("debug");
+
     console.error = function (...args) {
-      // tenta anexar stack se não vier
+      // tenta anexar stack
       if (!args.some((a) => a instanceof Error)) {
         try {
           args.push(new Error().stack);
@@ -129,7 +118,6 @@
       pushEvent({ type: "error", ts: Date.now(), args, indent: groupLevel });
       if (orig.error) orig.error(...args);
     };
-    console.debug = wrapSimple("debug");
 
     console.trace = function (...args) {
       const stack = new Error("trace").stack;
@@ -174,15 +162,9 @@
     };
 
     console.table = function (data, columns) {
-      // columns (opcional) não suportado 100%, mas respeitamos se array
       let tbl = toTableData(data);
       if (Array.isArray(columns) && columns.length) {
         tbl.cols = tbl.cols.filter((c) => columns.includes(c));
-        tbl.rows = tbl.rows.map((r, i) => {
-          const rowObj = {};
-          tbl.cols.forEach((c, idx) => (rowObj[c] = r[idx]));
-          return tbl.cols.map((c) => rowObj[c]);
-        });
       }
       pushEvent({
         type: "table",
@@ -228,9 +210,8 @@
     };
 
     console.assert = function (cond, ...args) {
-      if (!cond) {
+      if (!cond)
         pushEvent({ type: "assert", ts: Date.now(), args, indent: groupLevel });
-      }
       if (orig.assert) orig.assert(cond, ...args);
     };
 
@@ -250,7 +231,6 @@
 
     console.clear = function () {
       pushEvent({ type: "clear", ts: Date.now(), args: [], indent: 0 });
-      if (mimicConsoleClear) buffer.length = 0;
       if (orig.clear) orig.clear();
     };
 
@@ -276,37 +256,34 @@
       if (orig.countReset) orig.countReset(label);
     };
 
-    // erros não tratados
+    // erros globais
     window.addEventListener("error", (ev) => {
-      const { message, filename, lineno, colno, error } = ev;
       pushEvent({
         type: "uncaught",
         ts: Date.now(),
         args: [
-          message,
-          filename,
-          lineno,
-          colno,
-          error && error.stack ? error.stack : error,
+          ev.message,
+          ev.filename,
+          ev.lineno,
+          ev.colno,
+          ev.error && ev.error.stack ? ev.error.stack : ev.error,
         ],
         indent: 0,
       });
     });
     window.addEventListener("unhandledrejection", (ev) => {
-      const reason = ev.reason;
       pushEvent({
         type: "unhandledrejection",
         ts: Date.now(),
         args: [
-          reason instanceof Error
-            ? reason.stack || reason.message
-            : safePreview(reason),
+          ev.reason instanceof Error
+            ? ev.reason.stack || ev.reason.message
+            : safePreview(ev.reason),
         ],
         indent: 0,
       });
     });
 
-    // expõe estados
     RCSHub.consoleBuffer = buffer;
     RCSHub.__consoleTimers = timers;
     RCSHub.__consoleCounters = counters;
@@ -314,7 +291,45 @@
     RCSHub.__consoleHookedAll = true;
   }
 
-  // ===== estilos do viewer =====
+  // ===== 2) VIGIA NETWORKLOG E TRANSFORMA 4xx/5xx EM EVENTO DE CONSOLE =====
+  // se o core já está salvando em RCSHub.networkLog, a gente só consome aqui
+  if (!RCSHub.__consoleNetWatcher) {
+    const seen = new Set();
+    RCSHub.__consoleNetWatcher = setInterval(() => {
+      const net = RCSHub.networkLog || [];
+      for (const req of net) {
+        if (!req) continue;
+        // dá um id estável
+        const id =
+          req.__id ||
+          (req.__id = `${req.ts || req.time || Date.now()}:${
+            req.method || "GET"
+          }:${req.url}`);
+        if (seen.has(id)) continue;
+
+        // só loga se for erro
+        if (typeof req.status === "number" && req.status >= 400) {
+          pushEvent({
+            type: "network-error",
+            ts: req.ts || req.time || Date.now(),
+            args: [
+              `${req.method || "GET"} ${req.url}`,
+              `status ${req.status}`,
+              req.duration != null ? `${req.duration}ms` : "",
+            ],
+            indent: 0,
+          });
+        } else if (typeof req.status === "number") {
+          // se quiser ver TUDO da rede, comenta o if acima e descomenta aqui
+          // pushEvent({ type: 'network', ... })
+        }
+
+        seen.add(id);
+      }
+    }, 600);
+  }
+
+  // ===== 3) estilos =====
   RCSHub.injectCSS(`
     .rcs-con-wrap { display:flex; flex-direction:column; gap:8px; }
     .rcs-con-list { max-height:360px; overflow-y:auto; display:flex; flex-direction:column; gap:4px; }
@@ -329,7 +344,7 @@
     .rcs-con-table th { background:rgba(168,85,247,.12); }
   `);
 
-  // ===== UI (render) =====
+  // ===== 4) comando =====
   RCSHub.registerCommand({
     id: "console-rt",
     name: "Console (RT)",
@@ -358,12 +373,12 @@
           countReset: "#34d399",
           uncaught: "#ef4444",
           unhandledrejection: "#ef4444",
+          "network-error": "#f97316",
         }[t] || "#e2e8f0");
 
       function renderItem(ev) {
         const ts = new Date(ev.ts).toLocaleTimeString();
         const indent = (ev.indent || 0) * INDENT_STEP;
-        const styleIndent = `style="--rcs-indent:${indent}px"`;
         const head = `
           <div class="rcs-con-head">
             <div class="rcs-con-type" style="color:${colorFor(ev.type)}">${
@@ -373,57 +388,21 @@
           </div>
         `;
 
-        // special types
         if (ev.type === "table" && ev.table) {
           const { cols, rows } = ev.table;
           const thead = `<tr>${cols.map((c) => `<th>${c}</th>`).join("")}</tr>`;
           const tbody = rows
             .map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`)
             .join("");
-          return `<div class="rcs-con-line rcs-con-indent" ${styleIndent}>${head}<div class="rcs-con-msg"><table class="rcs-con-table">${thead}${tbody}</table></div></div>`;
+          return `<div class="rcs-con-line rcs-con-indent" style="--rcs-indent:${indent}px">${head}<div class="rcs-con-msg"><table class="rcs-con-table">${thead}${tbody}</table></div></div>`;
         }
 
-        if (ev.type === "group" || ev.type === "groupCollapsed") {
-          const label =
-            ev.args && ev.args.length
-              ? ev.args.map((a) => safePreview(a)).join(" ")
-              : "(group)";
-          return `<div class="rcs-con-line rcs-con-indent" ${styleIndent}>${head}<div class="rcs-con-msg">▼ ${label}</div></div>`;
-        }
-        if (ev.type === "groupEnd") {
-          return `<div class="rcs-con-line rcs-con-indent" ${styleIndent}>${head}<div class="rcs-con-msg">▲ groupEnd</div></div>`;
-        }
-
-        if (
-          ev.type === "time" ||
-          ev.type === "timeLog" ||
-          ev.type === "timeEnd"
-        ) {
-          const [label, delta, ...rest] = ev.args || [];
-          const extra =
-            rest && rest.length
-              ? " — " + rest.map((a) => safePreview(a)).join(" ")
-              : "";
-          const msg =
-            delta != null
-              ? `${label}: ${delta.toFixed(2)} ms${extra}`
-              : `${label}${extra}`;
-          return `<div class="rcs-con-line rcs-con-indent" ${styleIndent}>${head}<div class="rcs-con-msg">${msg}</div></div>`;
-        }
-
-        if (ev.type === "count" || ev.type === "countReset") {
-          const [label, n] = ev.args || [];
-          const msg =
-            ev.type === "count" ? `${label}: ${n}` : `${label}: reset`;
-          return `<div class="rcs-con-line rcs-con-indent" ${styleIndent}>${head}<div class="rcs-con-msg">${msg}</div></div>`;
-        }
-
-        // generic
         const msg =
           ev.args && ev.args.length
             ? ev.args.map((a) => safePreview(a)).join(" ")
             : "";
-        return `<div class="rcs-con-line rcs-con-indent" ${styleIndent}>${head}<div class="rcs-con-msg">${msg}</div></div>`;
+
+        return `<div class="rcs-con-line rcs-con-indent" style="--rcs-indent:${indent}px">${head}<div class="rcs-con-msg">${msg}</div></div>`;
       }
 
       return `
@@ -431,9 +410,7 @@
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <div>
               <h3 style="margin:0;">Console — tempo real</h3>
-              <p style="margin:0;font-size:10px;color:rgba(255,255,255,.4);">
-                Captura TODOS os métodos do console + erros não tratados
-              </p>
+              <p style="margin:0;font-size:10px;color:rgba(255,255,255,.4);">Captura console.*, erros globais e 4xx/5xx da network</p>
             </div>
             <span style="font-size:10px;color:rgba(255,255,255,0.45);">${
               items.length
