@@ -2,7 +2,7 @@
 (function (GM_xmlhttpRequest, GM_addStyle, GITHUB_BASE) {
   "use strict";
 
-  const MANIFEST_URL = `${GITHUB_BASE}/src/rcs/manifest.json`;
+  const MANIFEST_URL = `${GITHUB_BASE}/rcs/manifest.json`;
   const SYNC_INTERVAL = 1000 * 60 * 3; // 3 min
   const START_TS = Date.now();
 
