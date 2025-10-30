@@ -2,8 +2,6 @@
 /// <reference path="./rcs.core.ts" />
 var RCSHub;
 (function (RCSHub) {
-    // 👇 NÃO declara ROOT_ID aqui!
-    // usa o que veio do core
     function getLayoutHTML() {
         return `
     <div class="rcs-hub">
@@ -116,12 +114,11 @@ var RCSHub;
                 </div>
               </section>
 
-              <!-- CONSOLE LIVE -->
+              <!-- CONSOLE (lazy) -->
               <section class="rcs-hub__tab" data-rcs-content="console-live" id="rcs-hub-console-tab">
-                <!-- carregado on-demand -->
               </section>
 
-              <!-- NETWORK -->
+              <!-- NETWORK (placeholder) -->
               <section class="rcs-hub__tab" data-rcs-content="network">
                 <h2 class="rcs-hub__section-title">network</h2>
                 <p class="rcs-hub__section-sub">fetch + XHR capturados pelo hub</p>
@@ -140,7 +137,7 @@ var RCSHub;
               </section>
             </main>
 
-            <!-- RIGHT / CONSOLE META -->
+            <!-- RIGHT -->
             <aside class="rcs-hub__meta">
               <div class="rcs-hub__meta-head">session</div>
               <div class="rcs-hub__meta-row">

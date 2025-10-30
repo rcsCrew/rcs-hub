@@ -41,7 +41,6 @@ var RCSHub;
             const clearBtn = document.getElementById("rcs-hub-console-clear");
             if (clearBtn) {
                 clearBtn.addEventListener("click", () => {
-                    // limpa só a view; se quiser zerar o buffer global, criaremos depois
                     const container = document.getElementById("rcs-hub-console-stream");
                     if (container)
                         container.innerHTML = "";
@@ -55,7 +54,6 @@ var RCSHub;
             bindActions();
         }
         Console.init = init;
-        // registra no core pra ser lazy
         RCSHub.registerTabLoader("console-live", init);
     })(Console = RCSHub.Console || (RCSHub.Console = {}));
 })(RCSHub || (RCSHub = {}));
