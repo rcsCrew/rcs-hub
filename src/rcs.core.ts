@@ -1,6 +1,19 @@
-// src/rcs.core.ts
+/// <reference path="./rcs.layout.ts" />
+/// <reference path="./rcs.styles.ts" />
+
+// pra tampermonkey
+declare const unsafeWindow: any;
+
 namespace RCSHub {
-  // ===== console global =====
+  /* =====================================
+     IDENTIDADE GLOBAL DO HUB
+     ===================================== */
+  // 👉 SÓ AQUI define ROOT_ID
+  export const ROOT_ID = "rcs-hub-root";
+
+  /* =====================================
+     CONSOLE GLOBAL (buffer)
+     ===================================== */
   export type ConsoleLevel = "log" | "info" | "warn" | "error";
 
   export interface ConsoleEntry {
@@ -9,88 +22,114 @@ namespace RCSHub {
     ts: string;
   }
 
+  const CONSOLE_MAX = 200;
   const consoleBuffer: ConsoleEntry[] = [];
   let consoleHooked = false;
 
-  function now(): string {
-    return new Date().toTimeString().slice(0, 8);
-  }
-
-  /** devolve o buffer pra qualquer comando usar */
-  export function getConsoleBuffer(): ConsoleEntry[] {
+  export function getConsoleBuffer(): ReadonlyArray<ConsoleEntry> {
     return consoleBuffer;
   }
 
-  /** hook global: roda assim que o core for carregado */
+  export function pushConsoleEntry(entry: ConsoleEntry): void {
+    consoleBuffer.push(entry);
+    if (consoleBuffer.length > CONSOLE_MAX) {
+      consoleBuffer.shift();
+    }
+  }
+
+  function nowHHMMSS(): string {
+    return new Date().toTimeString().slice(0, 8);
+  }
+
+  /**
+   * tenta aplicar o patch num alvo (obj ou proto)
+   */
+  function tryPatchMethod(target: any, level: ConsoleLevel): boolean {
+    if (!target) return false;
+    const orig = target[level];
+    if (!orig || typeof orig !== "function") return false;
+
+    try {
+      const bound = orig.bind(target);
+      target[level] = (...args: any[]) => {
+        const msg = args
+          .map((a) => {
+            if (typeof a === "string") return a;
+            try {
+              return JSON.stringify(a);
+            } catch {
+              return String(a);
+            }
+          })
+          .join(" ");
+
+        pushConsoleEntry({
+          level,
+          msg,
+          ts: nowHHMMSS(),
+        });
+
+        return bound(...args);
+      };
+      return true;
+    } catch (e) {
+      // read-only
+      return false;
+    }
+  }
+
+  /**
+   * Hook global de console — não quebra se for read-only
+   */
   export function hookConsoleGlobal(): void {
     if (consoleHooked) return;
     consoleHooked = true;
 
-    const origLog = console.log;
-    const origInfo = console.info;
-    const origWarn = console.warn;
-    const origErr = console.error;
+    const targets: any[] = [];
 
-    function capture(level: ConsoleLevel, args: any[]) {
-      const msg = args
-        .map((a) => {
-          if (typeof a === "string") return a;
-          try {
-            return JSON.stringify(a);
-          } catch {
-            return String(a);
-          }
-        })
-        .join(" ");
-
-      const entry: ConsoleEntry = {
-        level,
-        msg,
-        ts: now(),
-      };
-
-      consoleBuffer.push(entry);
-      if (consoleBuffer.length > 250) {
-        consoleBuffer.shift();
-      }
-
-      // se a tela de console já estiver montada, tenta renderizar direto
-      const container = document.getElementById("rcs-hub-console-stream");
-      if (container) {
-        const row = document.createElement("div");
-        row.className = `rcs-hub__console-line rcs-hub__console-line--${entry.level}`;
-        row.innerHTML = `
-          <span class="rcs-hub__console-ts">${entry.ts}</span>
-          <span class="rcs-hub__console-level">${entry.level}</span>
-          <span class="rcs-hub__console-msg">${entry.msg}</span>
-        `;
-        container.appendChild(row);
-        container.scrollTop = container.scrollHeight;
-      }
+    // prioridade: página real
+    if (typeof unsafeWindow !== "undefined" && unsafeWindow.console) {
+      targets.push(unsafeWindow.console);
     }
+    if (typeof window !== "undefined" && window.console) {
+      targets.push(window.console);
+    }
+    // fallback: console do próprio userscript
+    targets.push(console);
 
-    console.log = (...args: any[]) => {
-      capture("log", args);
-      return origLog.apply(console, args);
-    };
-    console.info = (...args: any[]) => {
-      capture("info", args);
-      return origInfo.apply(console, args);
-    };
-    console.warn = (...args: any[]) => {
-      capture("warn", args);
-      return origWarn.apply(console, args);
-    };
-    console.error = (...args: any[]) => {
-      capture("error", args);
-      return origErr.apply(console, args);
-    };
+    const levels: ConsoleLevel[] = ["log", "info", "warn", "error"];
 
-    // marca no próprio console
-    origInfo.call(console, "[RCS HUB] console hook global ativo");
+    levels.forEach((level) => {
+      let hookedThisLevel = false;
+
+      for (const t of targets) {
+        // 1) tenta direto
+        if (tryPatchMethod(t, level)) {
+          hookedThisLevel = true;
+          break;
+        }
+        // 2) tenta no prototype
+        const proto = Object.getPrototypeOf(t);
+        if (proto && tryPatchMethod(proto, level)) {
+          hookedThisLevel = true;
+          break;
+        }
+      }
+
+      if (!hookedThisLevel) {
+        // não deu pra interceptar — mas não vamos quebrar o script
+        pushConsoleEntry({
+          level: "warn",
+          msg: `console.${level} não pôde ser interceptado (provavelmente read-only)`,
+          ts: nowHHMMSS(),
+        });
+      }
+    });
   }
 
-  // ===== registry de abas lazy =====
+  /* =====================================
+     LAZY TABS
+     ===================================== */
   const tabLoaders: Record<string, () => void> = {};
   const tabLoaded: Record<string, boolean> = {};
 
@@ -106,20 +145,22 @@ namespace RCSHub {
     tabLoaded[tabId] = true;
   }
 
-  export function appendStyle(styleId: string, css: string): void {
-    if (document.getElementById(styleId)) return;
+  /* =====================================
+     HELPER CSS
+     ===================================== */
+  export function appendStyle(id: string, css: string): void {
+    if (document.getElementById(id)) return;
     const style = document.createElement("style");
-    style.id = styleId;
+    style.id = id;
     style.textContent = css;
     document.head.appendChild(style);
   }
 
-  /** init do HUB */
+  /* =====================================
+     INIT
+     ===================================== */
   export function init(): void {
-    // 1) HOOKA CONSOLE LOGO DE CARA
-    hookConsoleGlobal();
-
-    // 2) evita duplicar layout
+    // evita duplicar
     if (document.getElementById(ROOT_ID)) return;
 
     // fonte
@@ -134,7 +175,7 @@ namespace RCSHub {
     baseStyle.textContent = RCSHub.hubCSS;
     document.head.appendChild(baseStyle);
 
-    // layout base
+    // layout
     const root = document.createElement("div");
     root.id = ROOT_ID;
     root.innerHTML = getLayoutHTML();
@@ -158,22 +199,24 @@ namespace RCSHub {
     fab?.addEventListener("click", () => togglePanel());
     closeBtn?.addEventListener("click", () => togglePanel(false));
 
-    // troca de abas + lazy
+    // troca de abas
     menuBtns.forEach((btn) => {
       btn.addEventListener("click", () => {
         const tab = btn.getAttribute("data-rcs-tab") || "";
+        // ativa botão
         menuBtns.forEach((b) => b.classList.remove("rcs-hub__item--active"));
         btn.classList.add("rcs-hub__item--active");
+        // ativa section
         tabs.forEach((sec) => {
           const active = sec.getAttribute("data-rcs-content") === tab;
           sec.classList.toggle("rcs-hub__tab--active", active);
         });
-        // carrega se for lazy
+        // lazy
         ensureTab(tab);
       });
     });
 
-    // infos básicas
+    // infos
     const hostEl = root.querySelector("#rcs-hub-host") as HTMLElement | null;
     const hostSmEl = root.querySelector(
       "#rcs-hub-host-sm"
@@ -198,15 +241,20 @@ namespace RCSHub {
       if (uptimeEl) uptimeEl.textContent = `${m}:${s}`;
     }, 1000);
 
-    // overview marcado como carregado
-    tabLoaded["overview"] = true;
-
-    // log no monitor padrão
+    // monitor padrão
     const logbox = root.querySelector("#rcs-hub-logbox") as HTMLElement | null;
     if (logbox) {
       const p = document.createElement("p");
-      p.textContent = `[${now()}] script rodando em ${location.hostname}`;
+      p.textContent = `[${new Date()
+        .toTimeString()
+        .slice(0, 8)}] script rodando em ${location.hostname}`;
       logbox.appendChild(p);
     }
+
+    // overview = carregado
+    tabLoaded["overview"] = true;
+
+    // 👇 HOOK DO CONSOLE (agora não quebra)
+    hookConsoleGlobal();
   }
 }

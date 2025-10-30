@@ -1,5 +1,4 @@
 "use strict";
-// src/commands/console/console.style.ts
 /// <reference path="../../rcs.core.ts" />
 var RCSHub;
 (function (RCSHub) {

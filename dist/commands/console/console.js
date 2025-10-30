@@ -1,5 +1,4 @@
 "use strict";
-// src/commands/console/console.ts
 /// <reference path="./console.layout.ts" />
 /// <reference path="./console.style.ts" />
 /// <reference path="../../rcs.core.ts" />
@@ -42,7 +41,7 @@ var RCSHub;
             const clearBtn = document.getElementById("rcs-hub-console-clear");
             if (clearBtn) {
                 clearBtn.addEventListener("click", () => {
-                    // limpa só a view; o buffer global fica — se quiser zerar mesmo, faz uma api no core
+                    // limpa só a view; se quiser zerar o buffer global, criaremos depois
                     const container = document.getElementById("rcs-hub-console-stream");
                     if (container)
                         container.innerHTML = "";

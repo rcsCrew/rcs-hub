@@ -1,4 +1,3 @@
-// src/commands/console/console.style.ts
 /// <reference path="../../rcs.core.ts" />
 
 namespace RCSHub.Console {

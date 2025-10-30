@@ -1,8 +1,6 @@
-// src/commands/console/console.layout.ts
 /// <reference path="../../rcs.core.ts" />
 
 namespace RCSHub.Console {
-  const TAB_ID = "console-live";
   const TAB_SEL = '[data-rcs-content="console-live"]';
 
   export function renderLayout(): void {

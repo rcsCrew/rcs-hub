@@ -1,83 +1,115 @@
 "use strict";
-// src/rcs.core.ts
+/// <reference path="./rcs.layout.ts" />
+/// <reference path="./rcs.styles.ts" />
 var RCSHub;
 (function (RCSHub) {
+    /* =====================================
+       IDENTIDADE GLOBAL DO HUB
+       ===================================== */
+    // 👉 SÓ AQUI define ROOT_ID
+    RCSHub.ROOT_ID = "rcs-hub-root";
+    const CONSOLE_MAX = 200;
     const consoleBuffer = [];
     let consoleHooked = false;
-    function now() {
-        return new Date().toTimeString().slice(0, 8);
-    }
-    /** devolve o buffer pra qualquer comando usar */
     function getConsoleBuffer() {
         return consoleBuffer;
     }
     RCSHub.getConsoleBuffer = getConsoleBuffer;
-    /** hook global: roda assim que o core for carregado */
+    function pushConsoleEntry(entry) {
+        consoleBuffer.push(entry);
+        if (consoleBuffer.length > CONSOLE_MAX) {
+            consoleBuffer.shift();
+        }
+    }
+    RCSHub.pushConsoleEntry = pushConsoleEntry;
+    function nowHHMMSS() {
+        return new Date().toTimeString().slice(0, 8);
+    }
+    /**
+     * tenta aplicar o patch num alvo (obj ou proto)
+     */
+    function tryPatchMethod(target, level) {
+        if (!target)
+            return false;
+        const orig = target[level];
+        if (!orig || typeof orig !== "function")
+            return false;
+        try {
+            const bound = orig.bind(target);
+            target[level] = (...args) => {
+                const msg = args
+                    .map((a) => {
+                    if (typeof a === "string")
+                        return a;
+                    try {
+                        return JSON.stringify(a);
+                    }
+                    catch {
+                        return String(a);
+                    }
+                })
+                    .join(" ");
+                pushConsoleEntry({
+                    level,
+                    msg,
+                    ts: nowHHMMSS(),
+                });
+                return bound(...args);
+            };
+            return true;
+        }
+        catch (e) {
+            // read-only
+            return false;
+        }
+    }
+    /**
+     * Hook global de console — não quebra se for read-only
+     */
     function hookConsoleGlobal() {
         if (consoleHooked)
             return;
         consoleHooked = true;
-        const origLog = console.log;
-        const origInfo = console.info;
-        const origWarn = console.warn;
-        const origErr = console.error;
-        function capture(level, args) {
-            const msg = args
-                .map((a) => {
-                if (typeof a === "string")
-                    return a;
-                try {
-                    return JSON.stringify(a);
-                }
-                catch {
-                    return String(a);
-                }
-            })
-                .join(" ");
-            const entry = {
-                level,
-                msg,
-                ts: now(),
-            };
-            consoleBuffer.push(entry);
-            if (consoleBuffer.length > 250) {
-                consoleBuffer.shift();
-            }
-            // se a tela de console já estiver montada, tenta renderizar direto
-            const container = document.getElementById("rcs-hub-console-stream");
-            if (container) {
-                const row = document.createElement("div");
-                row.className = `rcs-hub__console-line rcs-hub__console-line--${entry.level}`;
-                row.innerHTML = `
-          <span class="rcs-hub__console-ts">${entry.ts}</span>
-          <span class="rcs-hub__console-level">${entry.level}</span>
-          <span class="rcs-hub__console-msg">${entry.msg}</span>
-        `;
-                container.appendChild(row);
-                container.scrollTop = container.scrollHeight;
-            }
+        const targets = [];
+        // prioridade: página real
+        if (typeof unsafeWindow !== "undefined" && unsafeWindow.console) {
+            targets.push(unsafeWindow.console);
         }
-        console.log = (...args) => {
-            capture("log", args);
-            return origLog.apply(console, args);
-        };
-        console.info = (...args) => {
-            capture("info", args);
-            return origInfo.apply(console, args);
-        };
-        console.warn = (...args) => {
-            capture("warn", args);
-            return origWarn.apply(console, args);
-        };
-        console.error = (...args) => {
-            capture("error", args);
-            return origErr.apply(console, args);
-        };
-        // marca no próprio console
-        origInfo.call(console, "[RCS HUB] console hook global ativo");
+        if (typeof window !== "undefined" && window.console) {
+            targets.push(window.console);
+        }
+        // fallback: console do próprio userscript
+        targets.push(console);
+        const levels = ["log", "info", "warn", "error"];
+        levels.forEach((level) => {
+            let hookedThisLevel = false;
+            for (const t of targets) {
+                // 1) tenta direto
+                if (tryPatchMethod(t, level)) {
+                    hookedThisLevel = true;
+                    break;
+                }
+                // 2) tenta no prototype
+                const proto = Object.getPrototypeOf(t);
+                if (proto && tryPatchMethod(proto, level)) {
+                    hookedThisLevel = true;
+                    break;
+                }
+            }
+            if (!hookedThisLevel) {
+                // não deu pra interceptar — mas não vamos quebrar o script
+                pushConsoleEntry({
+                    level: "warn",
+                    msg: `console.${level} não pôde ser interceptado (provavelmente read-only)`,
+                    ts: nowHHMMSS(),
+                });
+            }
+        });
     }
     RCSHub.hookConsoleGlobal = hookConsoleGlobal;
-    // ===== registry de abas lazy =====
+    /* =====================================
+       LAZY TABS
+       ===================================== */
     const tabLoaders = {};
     const tabLoaded = {};
     function registerTabLoader(tabId, loader) {
@@ -93,20 +125,23 @@ var RCSHub;
         loader();
         tabLoaded[tabId] = true;
     }
-    function appendStyle(styleId, css) {
-        if (document.getElementById(styleId))
+    /* =====================================
+       HELPER CSS
+       ===================================== */
+    function appendStyle(id, css) {
+        if (document.getElementById(id))
             return;
         const style = document.createElement("style");
-        style.id = styleId;
+        style.id = id;
         style.textContent = css;
         document.head.appendChild(style);
     }
     RCSHub.appendStyle = appendStyle;
-    /** init do HUB */
+    /* =====================================
+       INIT
+       ===================================== */
     function init() {
-        // 1) HOOKA CONSOLE LOGO DE CARA
-        hookConsoleGlobal();
-        // 2) evita duplicar layout
+        // evita duplicar
         if (document.getElementById(RCSHub.ROOT_ID))
             return;
         // fonte
@@ -119,7 +154,7 @@ var RCSHub;
         const baseStyle = document.createElement("style");
         baseStyle.textContent = RCSHub.hubCSS;
         document.head.appendChild(baseStyle);
-        // layout base
+        // layout
         const root = document.createElement("div");
         root.id = RCSHub.ROOT_ID;
         root.innerHTML = RCSHub.getLayoutHTML();
@@ -141,21 +176,23 @@ var RCSHub;
         }
         fab?.addEventListener("click", () => togglePanel());
         closeBtn?.addEventListener("click", () => togglePanel(false));
-        // troca de abas + lazy
+        // troca de abas
         menuBtns.forEach((btn) => {
             btn.addEventListener("click", () => {
                 const tab = btn.getAttribute("data-rcs-tab") || "";
+                // ativa botão
                 menuBtns.forEach((b) => b.classList.remove("rcs-hub__item--active"));
                 btn.classList.add("rcs-hub__item--active");
+                // ativa section
                 tabs.forEach((sec) => {
                     const active = sec.getAttribute("data-rcs-content") === tab;
                     sec.classList.toggle("rcs-hub__tab--active", active);
                 });
-                // carrega se for lazy
+                // lazy
                 ensureTab(tab);
             });
         });
-        // infos básicas
+        // infos
         const hostEl = root.querySelector("#rcs-hub-host");
         const hostSmEl = root.querySelector("#rcs-hub-host-sm");
         const urlEl = root.querySelector("#rcs-hub-url");
@@ -178,15 +215,19 @@ var RCSHub;
             if (uptimeEl)
                 uptimeEl.textContent = `${m}:${s}`;
         }, 1000);
-        // overview marcado como carregado
-        tabLoaded["overview"] = true;
-        // log no monitor padrão
+        // monitor padrão
         const logbox = root.querySelector("#rcs-hub-logbox");
         if (logbox) {
             const p = document.createElement("p");
-            p.textContent = `[${now()}] script rodando em ${location.hostname}`;
+            p.textContent = `[${new Date()
+                .toTimeString()
+                .slice(0, 8)}] script rodando em ${location.hostname}`;
             logbox.appendChild(p);
         }
+        // overview = carregado
+        tabLoaded["overview"] = true;
+        // 👇 HOOK DO CONSOLE (agora não quebra)
+        hookConsoleGlobal();
     }
     RCSHub.init = init;
 })(RCSHub || (RCSHub = {}));

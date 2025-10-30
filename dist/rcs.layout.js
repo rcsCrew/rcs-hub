@@ -1,8 +1,9 @@
 "use strict";
-// src/rcs.layout.ts
+/// <reference path="./rcs.core.ts" />
 var RCSHub;
 (function (RCSHub) {
-    RCSHub.ROOT_ID = "rcs-hub-root";
+    // 👇 NÃO declara ROOT_ID aqui!
+    // usa o que veio do core
     function getLayoutHTML() {
         return `
     <div class="rcs-hub">
@@ -44,12 +45,10 @@ var RCSHub;
                 <span class="rcs-hub__item-title">/monitor</span>
                 <small>logs</small>
               </button>
-              <!-- NOVO: console realtime -->
               <button class="rcs-hub__item" data-rcs-tab="console-live">
                 <span class="rcs-hub__item-title">/console</span>
                 <small>runtime</small>
               </button>
-              <!-- NOVO: network -->
               <button class="rcs-hub__item" data-rcs-tab="network">
                 <span class="rcs-hub__item-title">/network</span>
                 <small>requisições</small>
@@ -117,19 +116,16 @@ var RCSHub;
                 </div>
               </section>
 
-              <!-- NOVO: CONSOLE LIVE -->
+              <!-- CONSOLE LIVE -->
               <section class="rcs-hub__tab" data-rcs-content="console-live" id="rcs-hub-console-tab">
-                <!-- será montado on-demand -->
+                <!-- carregado on-demand -->
               </section>
 
-
-              <!-- NOVO: NETWORK -->
+              <!-- NETWORK -->
               <section class="rcs-hub__tab" data-rcs-content="network">
                 <h2 class="rcs-hub__section-title">network</h2>
                 <p class="rcs-hub__section-sub">fetch + XHR capturados pelo hub</p>
-                <div class="rcs-hub__network-list" id="rcs-hub-network-list">
-                  <!-- requests entram aqui -->
-                </div>
+                <div class="rcs-hub__network-list" id="rcs-hub-network-list"></div>
               </section>
 
               <!-- CONFIG -->
