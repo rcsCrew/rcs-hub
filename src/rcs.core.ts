@@ -1,17 +1,103 @@
-/// <reference path="./rcs.layout.ts" />
-/// <reference path="./rcs.styles.ts" />
-
+// src/rcs.core.ts
 namespace RCSHub {
-  // registry de abas lazy
+  // ===== console global =====
+  export type ConsoleLevel = "log" | "info" | "warn" | "error";
+
+  export interface ConsoleEntry {
+    level: ConsoleLevel;
+    msg: string;
+    ts: string;
+  }
+
+  const consoleBuffer: ConsoleEntry[] = [];
+  let consoleHooked = false;
+
+  function now(): string {
+    return new Date().toTimeString().slice(0, 8);
+  }
+
+  /** devolve o buffer pra qualquer comando usar */
+  export function getConsoleBuffer(): ConsoleEntry[] {
+    return consoleBuffer;
+  }
+
+  /** hook global: roda assim que o core for carregado */
+  export function hookConsoleGlobal(): void {
+    if (consoleHooked) return;
+    consoleHooked = true;
+
+    const origLog = console.log;
+    const origInfo = console.info;
+    const origWarn = console.warn;
+    const origErr = console.error;
+
+    function capture(level: ConsoleLevel, args: any[]) {
+      const msg = args
+        .map((a) => {
+          if (typeof a === "string") return a;
+          try {
+            return JSON.stringify(a);
+          } catch {
+            return String(a);
+          }
+        })
+        .join(" ");
+
+      const entry: ConsoleEntry = {
+        level,
+        msg,
+        ts: now(),
+      };
+
+      consoleBuffer.push(entry);
+      if (consoleBuffer.length > 250) {
+        consoleBuffer.shift();
+      }
+
+      // se a tela de console já estiver montada, tenta renderizar direto
+      const container = document.getElementById("rcs-hub-console-stream");
+      if (container) {
+        const row = document.createElement("div");
+        row.className = `rcs-hub__console-line rcs-hub__console-line--${entry.level}`;
+        row.innerHTML = `
+          <span class="rcs-hub__console-ts">${entry.ts}</span>
+          <span class="rcs-hub__console-level">${entry.level}</span>
+          <span class="rcs-hub__console-msg">${entry.msg}</span>
+        `;
+        container.appendChild(row);
+        container.scrollTop = container.scrollHeight;
+      }
+    }
+
+    console.log = (...args: any[]) => {
+      capture("log", args);
+      return origLog.apply(console, args);
+    };
+    console.info = (...args: any[]) => {
+      capture("info", args);
+      return origInfo.apply(console, args);
+    };
+    console.warn = (...args: any[]) => {
+      capture("warn", args);
+      return origWarn.apply(console, args);
+    };
+    console.error = (...args: any[]) => {
+      capture("error", args);
+      return origErr.apply(console, args);
+    };
+
+    // marca no próprio console
+    origInfo.call(console, "[RCS HUB] console hook global ativo");
+  }
+
+  // ===== registry de abas lazy =====
   const tabLoaders: Record<string, () => void> = {};
   const tabLoaded: Record<string, boolean> = {};
 
-  // registrar loader de aba
   export function registerTabLoader(tabId: string, loader: () => void): void {
     tabLoaders[tabId] = loader;
   }
 
-  // carregar (se ainda não carregou)
   function ensureTab(tabId: string): void {
     if (tabLoaded[tabId]) return;
     const loader = tabLoaders[tabId];
@@ -20,7 +106,6 @@ namespace RCSHub {
     tabLoaded[tabId] = true;
   }
 
-  // util pra injetar css de comandos
   export function appendStyle(styleId: string, css: string): void {
     if (document.getElementById(styleId)) return;
     const style = document.createElement("style");
@@ -29,8 +114,12 @@ namespace RCSHub {
     document.head.appendChild(style);
   }
 
+  /** init do HUB */
   export function init(): void {
-    // evita duplicar
+    // 1) HOOKA CONSOLE LOGO DE CARA
+    hookConsoleGlobal();
+
+    // 2) evita duplicar layout
     if (document.getElementById(ROOT_ID)) return;
 
     // fonte
@@ -40,7 +129,7 @@ namespace RCSHub {
       "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap";
     document.head.appendChild(interLink);
 
-    // css base do hub
+    // css base
     const baseStyle = document.createElement("style");
     baseStyle.textContent = RCSHub.hubCSS;
     document.head.appendChild(baseStyle);
@@ -73,10 +162,8 @@ namespace RCSHub {
     menuBtns.forEach((btn) => {
       btn.addEventListener("click", () => {
         const tab = btn.getAttribute("data-rcs-tab") || "";
-        // ativa botão
         menuBtns.forEach((b) => b.classList.remove("rcs-hub__item--active"));
         btn.classList.add("rcs-hub__item--active");
-        // ativa section
         tabs.forEach((sec) => {
           const active = sec.getAttribute("data-rcs-content") === tab;
           sec.classList.toggle("rcs-hub__tab--active", active);
@@ -86,7 +173,7 @@ namespace RCSHub {
       });
     });
 
-    // preencher infos
+    // infos básicas
     const hostEl = root.querySelector("#rcs-hub-host") as HTMLElement | null;
     const hostSmEl = root.querySelector(
       "#rcs-hub-host-sm"
@@ -111,17 +198,15 @@ namespace RCSHub {
       if (uptimeEl) uptimeEl.textContent = `${m}:${s}`;
     }, 1000);
 
-    // monitor padrão
+    // overview marcado como carregado
+    tabLoaded["overview"] = true;
+
+    // log no monitor padrão
     const logbox = root.querySelector("#rcs-hub-logbox") as HTMLElement | null;
     if (logbox) {
       const p = document.createElement("p");
-      p.textContent = `[${new Date()
-        .toTimeString()
-        .slice(0, 8)}] script rodando em ${location.hostname}`;
+      p.textContent = `[${now()}] script rodando em ${location.hostname}`;
       logbox.appendChild(p);
     }
-
-    // overview pode ser marcado como "carregado"
-    tabLoaded["overview"] = true;
   }
 }
