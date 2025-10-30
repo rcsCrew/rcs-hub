@@ -21,7 +21,12 @@
     {
       "id": "network-modal",
       "name": "Detalhe Network",
-      "entry": "https://raw.githubusercontent.com/rcsCrew/rcs-hub/main/src/modal/network/index.js"
+      "entry": "https://raw.githubusercontent.com/rcsCrew/rcs-hub/refs/heads/main/modal/network/index.js"
+    },
+    {
+      "id": "control-center",
+      "name": "Control Center",
+      "entry": "https://raw.githubusercontent.com/rcsCrew/rcs-hub/refs/heads/main/modal/control-center/index.js"
     }
   ]
 }
