@@ -1,76 +1,82 @@
 // src/commands/network-rt.js
 (function (RCSHub) {
   RCSHub.injectCSS(`
-    .rcs-net-item { background:rgba(255,255,255,0.015);border:1px solid rgba(255,255,255,0.015);border-radius:6px;padding:4px 6px; }
+    .rcs-net-wrap { display:flex;flex-direction:column;gap:6px;height:100%; }
+    .rcs-net-list { flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px; }
+    .rcs-net-item { background:rgba(255,255,255,0.01);border:1px solid rgba(255,255,255,0.015);border-radius:6px;padding:4px 6px; }
   `);
 
   RCSHub.registerCommand({
     id: "network-rt",
     name: "Network (RT)",
     render() {
-      const logs = RCSHub.networkLog || [];
       return `
-        <div style="display:flex;flex-direction:column;gap:8px;">
+        <div class="rcs-net-wrap">
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <div>
               <h3 style="margin:0;">Network — tempo real</h3>
-              <p style="margin:0;font-size:10px;color:rgba(255,255,255,.4);">XHR interceptado do site atual</p>
+              <p style="margin:0;font-size:10px;color:rgba(255,255,255,.4);">append-only • XHR interceptado</p>
             </div>
-            <div style="display:flex;gap:6px;align-items:center;">
-              <span style="font-size:10px;color:rgba(255,255,255,0.45);">${
-                logs.length
-              } reqs</span>
-              ${
-                RCSHub.modals && RCSHub.modals.has("network-modal")
-                  ? `<button style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:7px;padding:2px 6px;font-size:10px;cursor:pointer;"
-                      onclick="(function(){const m=RCSHub.modals.get('network-modal');if(m&&m.render){const p=document.createElement('div');p.style.cssText='position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.35);';const inner=document.createElement('div');inner.innerHTML=m.render();p.appendChild(inner);p.onclick=(e)=>{if(e.target===p)p.remove();};document.body.appendChild(p);}})()">detalhar</button>`
-                  : ""
-              }
-            </div>
+            <span id="rcs-net-count" style="font-size:10px;color:rgba(255,255,255,.45);">0 reqs</span>
           </div>
-          <div style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;">
-            ${
-              logs.length
-                ? logs
-                    .slice(0, 80)
-                    .map((r) => {
-                      const okColor = r.ok
-                        ? "rgba(16,185,129,0.85)"
-                        : "rgba(248,113,113,0.9)";
-                      return `
-                      <div class="rcs-net-item">
-                        <div style="display:flex;justify-content:space-between;gap:6px;">
-                          <div style="font-size:11px;color:${okColor};font-weight:500;">${
-                        r.method
-                      }</div>
-                          <div style="font-size:10px;color:rgba(255,255,255,0.35);">${
-                            r.status
-                          } • ${r.duration}ms</div>
-                        </div>
-                        <div style="font-size:10.5px;color:rgba(255,255,255,0.85);word-break:break-all;">${
-                          r.url
-                        }</div>
-                        <div style="font-size:9px;color:rgba(255,255,255,0.25);">${new Date(
-                          r.ts || r.time || Date.now()
-                        ).toLocaleTimeString()}</div>
-                      </div>
-                    `;
-                    })
-                    .join("")
-                : `<div style="font-size:11px;color:rgba(255,255,255,.4);">Ainda não capturei requisições…</div>`
-            }
-          </div>
+          <div class="rcs-net-list" id="rcs-net-list"></div>
         </div>
       `;
     },
     onShow(container) {
-      const int = setInterval(() => {
-        if (!container.isConnected) {
-          clearInterval(int);
-          return;
+      const list = container.querySelector("#rcs-net-list");
+      const countEl = container.querySelector("#rcs-net-count");
+      if (!list) return;
+
+      let lastId = 0;
+
+      const renderNew = () => {
+        const logs = RCSHub.networkLog || [];
+        // logs estão em ordem desc (unshift), então vamos varrer de trás pra frente
+        const newOnes = [];
+        for (let i = logs.length - 1; i >= 0; i--) {
+          const r = logs[i];
+          if (!r) continue;
+          const id = r.__id || 0;
+          if (id > lastId) newOnes.push(r);
         }
-        container.innerHTML = this.render();
-      }, 1800);
+        newOnes
+          .sort((a, b) => (a.__id || 0) - (b.__id || 0))
+          .forEach((r) => {
+            const okColor = r.ok
+              ? "rgba(16,185,129,0.85)"
+              : "rgba(248,113,113,0.9)";
+            const el = document.createElement("div");
+            el.className = "rcs-net-item";
+            el.innerHTML = `
+            <div style="display:flex;justify-content:space-between;gap:6px;">
+              <div style="font-size:11px;color:${okColor};font-weight:500;">${
+              r.method
+            }</div>
+              <div style="font-size:10px;color:rgba(255,255,255,0.35);">${
+                r.status
+              } • ${r.duration}ms</div>
+            </div>
+            <div style="font-size:10.5px;color:rgba(255,255,255,0.85);word-break:break-all;">${
+              r.url
+            }</div>
+            <div style="font-size:9px;color:rgba(255,255,255,0.25);">${new Date(
+              r.ts || r.time || Date.now()
+            ).toLocaleTimeString()}</div>
+          `;
+            list.appendChild(el); // APPEND
+            lastId = r.__id || lastId;
+          });
+
+        countEl.textContent = `${logs.length} reqs`;
+      };
+
+      renderNew();
+
+      const int = setInterval(() => {
+        if (!container.isConnected) return clearInterval(int);
+        renderNew();
+      }, 800);
     },
   });
 })(RCSHub);

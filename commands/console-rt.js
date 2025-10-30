@@ -1,14 +1,16 @@
 // src/commands/console-rt.js
 (function (RCSHub) {
-  const BUFFER_LIMIT = 300;
-  const INDENT_STEP = 14;
+  // ================== CONFIG ==================
   const MAX_STRING = 10_000;
+  const INDENT_STEP = 14; // px por group()
+  // não vamos dar pop() — append-only
   const buffer = RCSHub.consoleBuffer || [];
   const timers = RCSHub.__consoleTimers || new Map();
   const counters = RCSHub.__consoleCounters || new Map();
   let groupLevel = RCSHub.__consoleGroupLevel || 0;
+  let seq = RCSHub.__consoleSeq || 1;
 
-  // ===== utils =====
+  // ================== UTILS ==================
   function safePreview(v, depth = 0, seen = new Set()) {
     try {
       if (v === null) return "null";
@@ -64,11 +66,13 @@
   }
 
   function pushEvent(ev) {
-    buffer.unshift(ev);
-    if (buffer.length > BUFFER_LIMIT) buffer.pop();
+    ev.__id = ev.__id || seq++;
+    buffer.unshift(ev); // novo sempre no topo
+    RCSHub.__consoleSeq = seq;
+    RCSHub.consoleBuffer = buffer;
   }
 
-  // ===== 1) hook completo do console =====
+  // ================== 1) HOOK COMPLETO DO CONSOLE ==================
   if (!RCSHub.__consoleHookedAll) {
     const orig = {};
     const methods = [
@@ -109,7 +113,6 @@
     console.debug = wrapSimple("debug");
 
     console.error = function (...args) {
-      // tenta anexar stack
       if (!args.some((a) => a instanceof Error)) {
         try {
           args.push(new Error().stack);
@@ -229,6 +232,7 @@
       if (orig.dirxml) orig.dirxml(...args);
     };
 
+    // NÃO vamos limpar o buffer aqui
     console.clear = function () {
       pushEvent({ type: "clear", ts: Date.now(), args: [], indent: 0 });
       if (orig.clear) orig.clear();
@@ -291,15 +295,13 @@
     RCSHub.__consoleHookedAll = true;
   }
 
-  // ===== 2) VIGIA NETWORKLOG E TRANSFORMA 4xx/5xx EM EVENTO DE CONSOLE =====
-  // se o core já está salvando em RCSHub.networkLog, a gente só consome aqui
+  // ================== 2) PUXA ERROS DA NETWORK ==================
   if (!RCSHub.__consoleNetWatcher) {
     const seen = new Set();
     RCSHub.__consoleNetWatcher = setInterval(() => {
       const net = RCSHub.networkLog || [];
       for (const req of net) {
         if (!req) continue;
-        // dá um id estável
         const id =
           req.__id ||
           (req.__id = `${req.ts || req.time || Date.now()}:${
@@ -307,7 +309,6 @@
           }:${req.url}`);
         if (seen.has(id)) continue;
 
-        // só loga se for erro
         if (typeof req.status === "number" && req.status >= 400) {
           pushEvent({
             type: "network-error",
@@ -319,122 +320,160 @@
             ],
             indent: 0,
           });
-        } else if (typeof req.status === "number") {
-          // se quiser ver TUDO da rede, comenta o if acima e descomenta aqui
-          // pushEvent({ type: 'network', ... })
         }
+        // se quiser TUDO da network, descomenta:
+        // else {
+        //   pushEvent({
+        //     type: "network",
+        //     ts: req.ts || req.time || Date.now(),
+        //     args: [`${req.method || "GET"} ${req.url}`, `status ${req.status}`, `${req.duration}ms`],
+        //     indent: 0,
+        //   });
+        // }
 
         seen.add(id);
       }
     }, 600);
   }
 
-  // ===== 3) estilos =====
+  // ================== 3) ESTILOS ==================
   RCSHub.injectCSS(`
-    .rcs-con-wrap { display:flex; flex-direction:column; gap:8px; }
-    .rcs-con-list { max-height:360px; overflow-y:auto; display:flex; flex-direction:column; gap:4px; }
+    .rcs-con-wrap { display:flex; flex-direction:column; gap:6px; height:100%; }
+    .rcs-con-list { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:4px; }
     .rcs-con-line { background:rgba(255,255,255,0.01); border:1px solid rgba(255,255,255,0.02); border-radius:8px; padding:6px 8px; }
     .rcs-con-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:2px; }
     .rcs-con-type { font-size:10px; text-transform:uppercase; letter-spacing:.04em; }
     .rcs-con-ts { font-size:9px; color:rgba(255,255,255,.35); }
     .rcs-con-msg { font-size:11px; white-space:pre-wrap; word-break:break-word; }
-    .rcs-con-indent { margin-left: var(--rcs-indent, 0px); }
-    .rcs-con-table { width:100%; border-collapse: collapse; font-size:10.5px; }
-    .rcs-con-table th, .rcs-con-table td { border:1px solid rgba(255,255,255,0.06); padding:3px 6px; }
-    .rcs-con-table th { background:rgba(168,85,247,.12); }
   `);
 
-  // ===== 4) comando =====
+  // ================== 4) COMANDO ==================
   RCSHub.registerCommand({
     id: "console-rt",
     name: "Console (RT)",
     render() {
-      const items = RCSHub.consoleBuffer || [];
-      const colorFor = (t) =>
-        ({
-          log: "#e2e8f0",
-          info: "#38bdf8",
-          warn: "#f97316",
-          error: "#f43f5e",
-          debug: "#94a3b8",
-          trace: "#a855f7",
-          assert: "#fb7185",
-          group: "#c084fc",
-          groupCollapsed: "#c084fc",
-          groupEnd: "#c084fc",
-          table: "#22c55e",
-          time: "#60a5fa",
-          timeLog: "#60a5fa",
-          timeEnd: "#60a5fa",
-          dir: "#eab308",
-          dirxml: "#eab308",
-          clear: "#94a3b8",
-          count: "#34d399",
-          countReset: "#34d399",
-          uncaught: "#ef4444",
-          unhandledrejection: "#ef4444",
-          "network-error": "#f97316",
-        }[t] || "#e2e8f0");
-
-      function renderItem(ev) {
-        const ts = new Date(ev.ts).toLocaleTimeString();
-        const indent = (ev.indent || 0) * INDENT_STEP;
-        const head = `
-          <div class="rcs-con-head">
-            <div class="rcs-con-type" style="color:${colorFor(ev.type)}">${
-          ev.type
-        }</div>
-            <div class="rcs-con-ts">${ts}</div>
-          </div>
-        `;
-
-        if (ev.type === "table" && ev.table) {
-          const { cols, rows } = ev.table;
-          const thead = `<tr>${cols.map((c) => `<th>${c}</th>`).join("")}</tr>`;
-          const tbody = rows
-            .map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`)
-            .join("");
-          return `<div class="rcs-con-line rcs-con-indent" style="--rcs-indent:${indent}px">${head}<div class="rcs-con-msg"><table class="rcs-con-table">${thead}${tbody}</table></div></div>`;
-        }
-
-        const msg =
-          ev.args && ev.args.length
-            ? ev.args.map((a) => safePreview(a)).join(" ")
-            : "";
-
-        return `<div class="rcs-con-line rcs-con-indent" style="--rcs-indent:${indent}px">${head}<div class="rcs-con-msg">${msg}</div></div>`;
-      }
-
       return `
         <div class="rcs-con-wrap">
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <div>
               <h3 style="margin:0;">Console — tempo real</h3>
-              <p style="margin:0;font-size:10px;color:rgba(255,255,255,.4);">Captura console.*, erros globais e 4xx/5xx da network</p>
+              <p style="margin:0;font-size:10px;color:rgba(255,255,255,.4);">
+                append-only • console.*, erros globais e network 4xx/5xx
+              </p>
             </div>
-            <span style="font-size:10px;color:rgba(255,255,255,0.45);">${
-              items.length
-            } eventos</span>
+            <span id="rcs-con-count" style="font-size:10px;color:rgba(255,255,255,0.45);">
+              ${(RCSHub.consoleBuffer || []).length} eventos
+            </span>
           </div>
-          <div class="rcs-con-list">
-            ${
-              items.length
-                ? items.map(renderItem).join("")
-                : `
-              <div style="font-size:11px;color:rgba(255,255,255,.45);">
-                Sem eventos ainda… faça um <code>console.log('oi rcs')</code>.
-              </div>
-            `
-            }
-          </div>
+          <div class="rcs-con-list" id="rcs-con-list"></div>
         </div>
       `;
     },
     onShow(container) {
+      const list = container.querySelector("#rcs-con-list");
+      const countEl = container.querySelector("#rcs-con-count");
+      if (!list) return;
+
+      // desenha o que já existe (em ordem antiga->nova)
+      let lastRendered = 0;
+      function renderNew() {
+        const items = RCSHub.consoleBuffer || [];
+        const pending = [];
+        for (let i = items.length - 1; i >= 0; i--) {
+          const ev = items[i];
+          if (!ev.__id) continue;
+          if (ev.__id > lastRendered) pending.push(ev);
+        }
+        pending
+          .sort((a, b) => a.__id - b.__id)
+          .forEach((ev) => {
+            const el = document.createElement("div");
+            el.className = "rcs-con-line";
+            const color =
+              {
+                log: "#e2e8f0",
+                info: "#38bdf8",
+                warn: "#f97316",
+                error: "#f43f5e",
+                debug: "#94a3b8",
+                trace: "#a855f7",
+                assert: "#fb7185",
+                group: "#c084fc",
+                groupCollapsed: "#c084fc",
+                groupEnd: "#c084fc",
+                table: "#22c55e",
+                time: "#60a5fa",
+                timeLog: "#60a5fa",
+                timeEnd: "#60a5fa",
+                dir: "#eab308",
+                dirxml: "#eab308",
+                clear: "#94a3b8",
+                count: "#34d399",
+                countReset: "#34d399",
+                uncaught: "#ef4444",
+                unhandledrejection: "#ef4444",
+                "network-error": "#f97316",
+              }[ev.type] || "#e2e8f0";
+
+            const ts = new Date(ev.ts).toLocaleTimeString();
+            const indent = (ev.indent || 0) * INDENT_STEP;
+            el.style.marginLeft = indent + "px";
+
+            // table
+            if (ev.type === "table" && ev.table) {
+              const { cols, rows } = ev.table;
+              const thead = `<tr>${cols
+                .map((c) => `<th>${c}</th>`)
+                .join("")}</tr>`;
+              const tbody = rows
+                .map(
+                  (r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`
+                )
+                .join("");
+              el.innerHTML = `
+                <div class="rcs-con-head">
+                  <div class="rcs-con-type" style="color:${color}">${ev.type}</div>
+                  <div class="rcs-con-ts">${ts}</div>
+                </div>
+                <div class="rcs-con-msg">
+                  <table style="width:100%;border-collapse:collapse;font-size:10.5px;">
+                    ${thead}${tbody}
+                  </table>
+                </div>
+              `;
+            } else {
+              const msg =
+                ev.args && ev.args.length
+                  ? ev.args.map((a) => safePreview(a)).join(" ")
+                  : "";
+              el.innerHTML = `
+                <div class="rcs-con-head">
+                  <div class="rcs-con-type" style="color:${color}">${ev.type}</div>
+                  <div class="rcs-con-ts">${ts}</div>
+                </div>
+                <div class="rcs-con-msg">${msg}</div>
+              `;
+            }
+
+            list.appendChild(el); // APPEND
+            lastRendered = ev.__id;
+          });
+
+        if (countEl) {
+          countEl.textContent = `${
+            (RCSHub.consoleBuffer || []).length
+          } eventos`;
+        }
+      }
+
+      // desenha o que já tem
+      renderNew();
+
+      // e continua atualizando
       const int = setInterval(() => {
         if (!container.isConnected) return clearInterval(int);
-        container.innerHTML = this.render();
-      }, 1200);
+        renderNew();
+      }, 800);
     },
   });
 })(RCSHub);

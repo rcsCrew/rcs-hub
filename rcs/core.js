@@ -1,6 +1,6 @@
 // src/rcs/core.js
 (function (GM_xmlhttpRequest, GM_addStyle, GITHUB_BASE) {
-  "use strict";
+  ("use strict");
 
   const MANIFEST_URL = `${GITHUB_BASE}/rcs/manifest.json`;
   const SYNC_INTERVAL = 1000 * 60 * 3; // 3 min
@@ -647,35 +647,41 @@
   RCSHub._forceSync = () => syncManifest(true);
 
   // =============== NETWORK HOOK (pra network-rt) ===============
+  // ====== NETWORK HOOK (append-only) ======
   (function instrumentNetwork() {
-    const reqLog = [];
+    const reqLog = RCSHub.networkLog || [];
     const origOpen = XMLHttpRequest.prototype.open;
     const origSend = XMLHttpRequest.prototype.send;
+    let seq = RCSHub.__netSeq || 1;
 
     XMLHttpRequest.prototype.open = function (method, url, ...rest) {
       this.__rcs_meta = { method, url, ts: Date.now() };
       return origOpen.call(this, method, url, ...rest);
     };
+
     XMLHttpRequest.prototype.send = function (body) {
       const meta = this.__rcs_meta;
       const start = Date.now();
       this.addEventListener("loadend", () => {
         const entry = {
+          __id: seq++,
           ...meta,
           duration: Date.now() - start,
           status: this.status,
           ok: this.status >= 200 && this.status < 300,
         };
-        reqLog.unshift(entry);
-        if (reqLog.length > 120) reqLog.pop();
-
-        // joga no console também se for erro
+        reqLog.unshift(entry); // EMPILHA
+        // 👇 não tem pop aqui
+        // se quiser um limite de segurança, coloca:
+        // if (reqLog.length > 5000) reqLog.pop();
+        // joga no console se der ruim
         if (
           !entry.ok &&
           window.RCSHub &&
           Array.isArray(window.RCSHub.consoleBuffer)
         ) {
           window.RCSHub.consoleBuffer.unshift({
+            id: "net-" + entry.__id,
             type: "network-error",
             ts: entry.ts,
             args: [
@@ -686,9 +692,11 @@
             indent: 0,
           });
         }
+        RCSHub.__netSeq = seq;
       });
       return origSend.call(this, body);
     };
+
     RCSHub.networkLog = reqLog;
   })();
 
