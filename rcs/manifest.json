@@ -4,17 +4,17 @@
     {
       "id": "overview",
       "name": "Overview",
-      "entry": "https://raw.githubusercontent.com/rcsCrew/rcs-hub/main/src/commands/overview.js"
+      "entry": "https://raw.githubusercontent.com/rcsCrew/rcs-hub/main/commands/overview.js"
     },
     {
       "id": "console-rt",
       "name": "Console (RT)",
-      "entry": "https://raw.githubusercontent.com/rcsCrew/rcs-hub/main/src/commands/console-rt.js"
+      "entry": "https://raw.githubusercontent.com/rcsCrew/rcs-hub/main/commands/console-rt.js"
     },
     {
       "id": "network-rt",
       "name": "Network (RT)",
-      "entry": "https://raw.githubusercontent.com/rcsCrew/rcs-hub/main/src/commands/network-rt.js"
+      "entry": "https://raw.githubusercontent.com/rcsCrew/rcs-hub/main/commands/network-rt.js"
     }
   ],
   "modals": [

@@ -2,11 +2,13 @@
 (function (GM_xmlhttpRequest, GM_addStyle, GITHUB_BASE) {
   "use strict";
 
-  const MANIFEST_URL = `${GITHUB_BASE}/src/rcs/manifest.json`;
+  // pega os comandos que vamos carregar
+  const MANIFEST_URL = `${GITHUB_BASE}/rcs/manifest.json`;
   const SYNC_INTERVAL = 1000 * 60 * 3; // 3 min
 
+  // namespace global
   const RCSHub = (window.RCSHub = window.RCSHub || {
-    version: "0.2.0",
+    version: "0.3.0",
     commands: new Map(),
     modals: new Map(),
     manifest: null,
@@ -18,7 +20,7 @@
     registerCommand(def) {
       if (!def || !def.id) return;
       this.commands.set(def.id, def);
-      this.ui.refreshMenu && this.ui.refreshMenu();
+      this.ui.refreshSide && this.ui.refreshSide();
     },
     registerModal(def) {
       if (!def || !def.id) return;
@@ -31,14 +33,15 @@
     },
   });
 
+  // ====== ESTILO BASE ======
   GM_addStyle(`
     :root {
-      --rcs-bg: rgba(12, 12, 12, 0.78);
-      --rcs-panel: rgba(11,11,11,.9);
-      --rcs-text: #f9fafa;
+      --rcs-bg: rgba(18,18,18,0.85);
+      --rcs-panel: rgba(15,15,15,.9);
+      --rcs-text: #f9fafb;
       --rcs-muted: #bdc0c2;
-      --rcs-accent: #38bdf8;
-      --rcs-radius: 16px;
+      --rcs-accent: #a855f7;
+      --rcs-border: rgba(168,85,247,.25);
       --rcs-z: 2147483000;
       font-family: Inter, system-ui, sans-serif;
     }
@@ -61,206 +64,265 @@
       backdrop-filter: blur(18px);
       user-select: none;
     }
-    .rcs-hub-panel {
+    .rcs-hub-overlay {
       position: fixed;
-      bottom: 160px;
-      right: 24px;
-      width: 360px;
-      max-height: 480px;
-      background: linear-gradient(160deg, rgba(10,10,10,0.92), rgba(10,10,10,0.45));
-      border: 1px solid rgba(255,255,255,0.05);
-      border-radius: 18px;
-      box-shadow: 0 18px 40px rgba(0,0,0,.35);
-      backdrop-filter: blur(22px);
-      color: var(--rcs-text);
-      z-index: var(--rcs-z);
+      inset: 0;
+      background: rgba(0,0,0,.35);
+      z-index: calc(var(--rcs-z) + 1);
       display: none;
-      flex-direction: column;
-      overflow: hidden;
+      align-items: center;
+      justify-content: center;
     }
-    .rcs-hub-header { height:46px; display:flex; align-items:center; justify-content:space-between; padding:0 12px 0 16px; border-bottom:1px solid rgba(255,255,255,0.02); cursor:move; gap:8px;}
-    .rcs-hub-menu { display:flex; gap:4px; padding:8px 10px; border-bottom:1px solid rgba(255,255,255,0.03); overflow-x:auto; }
-    .rcs-hub-tab { background:rgba(255,255,255,0.02); border:1px solid transparent; border-radius:9999px; padding:5px 12px; font-size:11px; cursor:pointer; white-space:nowrap; }
-    .rcs-hub-tab.active { background:rgba(12,148,255,0.18); border-color:rgba(59,130,246,0.35); }
-    .rcs-hub-body { flex:1; overflow-y:auto; padding:10px 12px 12px; font-size:12px; }
-    .rcs-hub-modalbtn { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); border-radius:9999px; padding:2px 7px; font-size:11px; cursor:pointer; display:flex; gap:4px; align-items:center; }
-    .rcs-hub-close { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.04); border-radius:9999px; width:26px; height:26px; display:flex; align-items:center; justify-content:center; cursor:pointer; }
+    .rcs-hub-shell {
+      width: 880px;
+      height: 520px;
+      background: radial-gradient(circle at 10% 10%, rgba(23,23,24,1) 0%, rgba(11,11,11,0.8) 40%, rgba(8,8,8,0.65) 100%);
+      border: 1px solid rgba(168,85,247,.25);
+      border-radius: 18px;
+      box-shadow: 0 24px 50px rgba(0,0,0,.45);
+      display: grid;
+      grid-template-columns: 190px 1fr;
+      overflow: hidden;
+      backdrop-filter: blur(20px);
+      color: #f9fafb;
+    }
+    .rcs-hub-sidebar {
+      background: linear-gradient(180deg, rgba(12,12,12,.35) 0%, rgba(12,12,12,0) 35%);
+      border-right: 1px solid rgba(255,255,255,0.02);
+      display: flex;
+      flex-direction: column;
+      padding: 14px 10px 10px 12px;
+      gap: 10px;
+    }
+    .rcs-hub-sidebar-title {
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .rcs-hub-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .rcs-hub-nav-btn {
+      border: 0;
+      background: rgba(255,255,255,0.01);
+      color: rgba(249,250,250,.7);
+      display: flex;
+      gap: 7px;
+      align-items: center;
+      font-size: 11.5px;
+      border-radius: 10px;
+      padding: 5px 7px 5px 6px;
+      cursor: pointer;
+      transition: .12s ease;
+    }
+    .rcs-hub-nav-btn.active,
+    .rcs-hub-nav-btn:hover {
+      background: rgba(168,85,247,.13);
+      color: #fff;
+    }
+    .rcs-hub-main {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+    .rcs-hub-topbar {
+      height: 46px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px 0 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.02);
+    }
+    .rcs-hub-title-block {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .rcs-hub-title {
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .rcs-hub-sub {
+      font-size: 10px;
+      color: rgba(249,250,250,.4);
+    }
+    .rcs-hub-top-actions {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .rcs-hub-btn {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 8px;
+      height: 24px;
+      padding: 0 8px;
+      font-size: 10.5px;
+      color: #fff;
+      cursor: pointer;
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    }
+    .rcs-hub-close {
+      width: 26px; height: 26px;
+      display: flex; align-items:center; justify-content:center;
+      cursor: pointer;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.05);
+      border-radius: 9999px;
+    }
+    .rcs-hub-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 14px 14px 14px;
+      background: radial-gradient(circle farthest-side at 100% 0%, rgba(168,85,247,.06) 0%, rgba(168,85,247,0) 50%);
+    }
+    .rcs-hub-empty {
+      color: rgba(249,250,250,.4);
+      font-size: 11.5px;
+    }
   `);
 
-  function makeDraggable(el, handle) {
-    const dragTarget = handle || el;
-    let offsetX = 0,
-      offsetY = 0,
-      isDown = false;
-    dragTarget.addEventListener("mousedown", (e) => {
-      isDown = true;
-      offsetX = e.clientX - el.offsetLeft;
-      offsetY = e.clientY - el.offsetTop;
-      document.addEventListener("mousemove", move);
-      document.addEventListener("mouseup", up);
-      e.preventDefault();
-    });
-    function move(e) {
-      if (!isDown) return;
-      el.style.left = e.clientX - offsetX + "px";
-      el.style.top = e.clientY - offsetY + "px";
-      el.style.right = "auto";
-      el.style.bottom = "auto";
-      el.style.position = "fixed";
-    }
-    function up() {
-      isDown = false;
-      document.removeEventListener("mousemove", move);
-      document.removeEventListener("mouseup", up);
-    }
-  }
-
+  // ===== UI PRINCIPAL (FAB + painel) =====
   function createUI() {
+    // FAB
     const fab = document.createElement("div");
     fab.className = "rcs-hub-fab";
     fab.textContent = "RCS";
     document.body.appendChild(fab);
 
-    const panel = document.createElement("div");
-    panel.className = "rcs-hub-panel";
-    panel.innerHTML = `
-      <div class="rcs-hub-header" id="rcs-hub-header">
-        <div>
-          <div style="font-weight:600;font-size:13px;">RCS HUB</div>
-          <div style="font-size:9.5px;color:var(--rcs-muted);">overview / console / network</div>
+    // OVERLAY + SHELL
+    const overlay = document.createElement("div");
+    overlay.className = "rcs-hub-overlay";
+    overlay.innerHTML = `
+      <div class="rcs-hub-shell">
+        <div class="rcs-hub-sidebar" id="rcs-hub-sidebar">
+          <div class="rcs-hub-sidebar-title">
+            <span style="width:20px;height:20px;border-radius:6px;background:radial-gradient(circle at 20% 20%, rgba(168,85,247,1) 0%, rgba(15,23,42,.1) 100%);display:inline-block;"></span>
+            RCS HUB
+          </div>
+          <div class="rcs-hub-nav" id="rcs-hub-nav">
+            <!-- será preenchido -->
+          </div>
+          <div style="margin-top:auto;font-size:10px;color:rgba(249,250,250,.32);">
+            v${RCSHub.version} • rcsCrew
+          </div>
         </div>
-        <div style="display:flex;gap:4px;align-items:center;">
-          <button class="rcs-hub-modalbtn" id="rcs-hub-modals-btn">modais</button>
-          <div class="rcs-hub-close" id="rcs-hub-close">×</div>
+        <div class="rcs-hub-main">
+          <div class="rcs-hub-topbar">
+            <div class="rcs-hub-title-block">
+              <div class="rcs-hub-title">Painel de Monitoramento</div>
+              <div class="rcs-hub-sub">Console e Network em tempo real</div>
+            </div>
+            <div class="rcs-hub-top-actions">
+              <button class="rcs-hub-btn" id="rcs-hub-refresh">recarregar</button>
+              <div class="rcs-hub-close" id="rcs-hub-close">×</div>
+            </div>
+          </div>
+          <div class="rcs-hub-content" id="rcs-hub-content">
+            <div class="rcs-hub-empty">Carregando módulos remotos…</div>
+          </div>
         </div>
-      </div>
-      <div class="rcs-hub-menu" id="rcs-hub-menu"></div>
-      <div class="rcs-hub-body" id="rcs-hub-body">
-        <div style="color:var(--rcs-muted);font-size:11.5px;">Carregando…</div>
       </div>
     `;
-    document.body.appendChild(panel);
+    document.body.appendChild(overlay);
 
+    // FAB abre/fecha
     fab.addEventListener("click", () => {
-      panel.style.display = panel.style.display === "flex" ? "none" : "flex";
+      overlay.style.display =
+        overlay.style.display === "flex" ? "none" : "flex";
     });
-    panel.querySelector("#rcs-hub-close").addEventListener("click", () => {
-      panel.style.display = "none";
+    // close
+    overlay.querySelector("#rcs-hub-close").addEventListener("click", () => {
+      overlay.style.display = "none";
     });
-    panel
-      .querySelector("#rcs-hub-modals-btn")
-      .addEventListener("click", openModalsList);
+    // ESC fecha
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") overlay.style.display = "none";
+    });
+    // refresh
+    overlay.querySelector("#rcs-hub-refresh").addEventListener("click", () => {
+      syncManifest(true);
+    });
 
-    makeDraggable(fab);
-    makeDraggable(panel, panel.querySelector("#rcs-hub-header"));
-
+    // salva na lib
     RCSHub.ui.fab = fab;
-    RCSHub.ui.panel = panel;
-    RCSHub.ui.menu = panel.querySelector("#rcs-hub-menu");
-    RCSHub.ui.body = panel.querySelector("#rcs-hub-body");
-    RCSHub.ui.refreshMenu = buildMenu;
+    RCSHub.ui.overlay = overlay;
+    RCSHub.ui.sidebar = overlay.querySelector("#rcs-hub-nav");
+    RCSHub.ui.content = overlay.querySelector("#rcs-hub-content");
+    RCSHub.ui.refreshSide = buildSide;
   }
 
-  function buildMenu() {
-    const menu = RCSHub.ui.menu;
-    const body = RCSHub.ui.body;
+  // ===== monta sidebar com os comandos carregados =====
+  function buildSide() {
+    const side = RCSHub.ui.sidebar;
+    const content = RCSHub.ui.content;
     const cmds = Array.from(RCSHub.commands.values());
-    menu.innerHTML = "";
 
-    if (!cmds.length) {
-      body.innerHTML = `<div style="color:var(--rcs-muted);">Sem comandos carregados…</div>`;
+    // queremos só console e network → se tiver outros, ignora na UI
+    const filtered = cmds.filter(
+      (c) => c.id === "console-rt" || c.id === "network-rt"
+    );
+
+    side.innerHTML = "";
+
+    if (!filtered.length) {
+      content.innerHTML = `<div class="rcs-hub-empty">Sem comandos (esperando console-rt e network-rt)</div>`;
       return;
     }
 
-    cmds.forEach((c, idx) => {
+    filtered.forEach((c, idx) => {
       const btn = document.createElement("button");
-      btn.className = "rcs-hub-tab" + (idx === 0 ? " active" : "");
-      btn.textContent = c.name || c.id;
+      btn.className = "rcs-hub-nav-btn" + (idx === 0 ? " active" : "");
+      btn.dataset.cmd = c.id;
+      btn.innerHTML = `
+        <span style="width:17px;text-align:center;">${
+          c.id === "console-rt" ? "🖥" : "🌐"
+        }</span>
+        ${c.name || c.id}
+      `;
       btn.addEventListener("click", () => {
-        menu
-          .querySelectorAll(".rcs-hub-tab")
-          .forEach((t) => t.classList.remove("active"));
+        side
+          .querySelectorAll(".rcs-hub-nav-btn")
+          .forEach((b) => b.classList.remove("active"));
         btn.classList.add("active");
         renderCommand(c.id);
       });
-      menu.appendChild(btn);
+      side.appendChild(btn);
     });
 
-    renderCommand(cmds[0].id);
+    // render o primeiro
+    renderCommand(filtered[0].id);
   }
 
+  // ===== renderiza comando no painel =====
   function renderCommand(id) {
     const cmd = RCSHub.commands.get(id);
-    const body = RCSHub.ui.body;
+    const content = RCSHub.ui.content;
     if (!cmd) {
-      body.innerHTML = `<div style="color:var(--rcs-muted);">Comando não encontrado: ${id}</div>`;
+      content.innerHTML = `<div class="rcs-hub-empty">Comando não encontrado: ${id}</div>`;
       return;
     }
     if (typeof cmd.render === "function") {
       const html = cmd.render();
       if (typeof html === "string") {
-        body.innerHTML = html;
+        content.innerHTML = html;
       } else {
-        body.innerHTML = "";
-        body.appendChild(html);
+        content.innerHTML = "";
+        content.appendChild(html);
       }
-      cmd.onShow && cmd.onShow(body);
+      cmd.onShow && cmd.onShow(content);
     } else {
-      body.innerHTML = `<div style="color:var(--rcs-muted);">Comando sem render.</div>`;
+      content.innerHTML = `<div class="rcs-hub-empty">Comando sem render.</div>`;
     }
   }
 
-  function openModalsList() {
-    const mods = Array.from(RCSHub.modals.values());
-    const body = RCSHub.ui.body;
-    if (!mods.length) {
-      body.innerHTML = `<div style="color:var(--rcs-muted);font-size:11.5px;">Nenhum modal registrado…</div>`;
-      return;
-    }
-    body.innerHTML = `<div style="display:flex;flex-direction:column;gap:6px;">
-      ${mods
-        .map(
-          (m) => `
-        <button style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:6px 8px;text-align:left;">
-          <strong>${m.name || m.id}</strong><br>
-          <span style="font-size:10px;color:var(--rcs-muted);">${
-            m.desc || ""
-          }</span>
-        </button>
-      `
-        )
-        .join("")}
-    </div>`;
-    Array.from(body.querySelectorAll("button")).forEach((btn, i) => {
-      btn.addEventListener("click", () => {
-        const m = mods[i];
-        showModal(m);
-      });
-    });
-  }
-
-  function showModal(mod) {
-    if (!mod || typeof mod.render !== "function") return;
-    const panel = document.createElement("div");
-    panel.style.cssText = `
-      position:fixed;inset:0;z-index:2147483647;
-      display:flex;align-items:center;justify-content:center;
-      background:rgba(0,0,0,.35);
-    `;
-    const inner = document.createElement("div");
-    const html = mod.render();
-    inner.innerHTML =
-      typeof html === "string"
-        ? html
-        : '<div style="background:#111;padding:12px;border-radius:12px;">Modal vazio</div>';
-    panel.appendChild(inner);
-    panel.addEventListener("click", (e) => {
-      if (e.target === panel) panel.remove();
-    });
-    document.body.appendChild(panel);
-    mod.onShow && mod.onShow(inner);
-  }
-
+  // ===== fetch remoto =====
   function fetchRemote(url) {
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
@@ -276,12 +338,16 @@
     });
   }
 
-  async function syncManifest() {
+  async function syncManifest(forceLog) {
     try {
       const txt = await fetchRemote(MANIFEST_URL);
       const json = JSON.parse(txt);
       RCSHub.manifest = json;
-      RCSHub.log("manifest:", json);
+      if (forceLog) RCSHub.log("manifest recarregado:", json);
+
+      // limpa comandos antigos?
+      // opcional, mas vamos manter
+      // RCSHub.commands = new Map(); // se quiser resetar 100%
 
       if (Array.isArray(json.commands)) {
         for (const c of json.commands) {
@@ -292,29 +358,37 @@
         }
       }
 
-      if (Array.isArray(json.modals)) {
-        for (const m of json.modals) {
-          if (!m.entry) continue;
-          const code = await fetchRemote(m.entry);
-          const fn = new Function("RCSHub", code);
-          fn(RCSHub);
-        }
-      }
-
-      RCSHub.ui.refreshMenu && RCSHub.ui.refreshMenu();
+      // depois de carregar, monta sidebar
+      RCSHub.ui.refreshSide && RCSHub.ui.refreshSide();
     } catch (e) {
-      RCSHub.log("falhou manifest, usando fallback");
-      RCSHub.registerCommand({
-        id: "overview-local",
-        name: "Overview (local)",
-        render() {
-          return `<div>Manifest não carregou. URL: ${location.href}</div>`;
-        },
-      });
-      RCSHub.ui.refreshMenu && RCSHub.ui.refreshMenu();
+      RCSHub.log("falhou manifest, criando fallback console/network");
+      // FALLBACK: cria dois comandos simples
+      if (!RCSHub.commands.has("console-rt")) {
+        RCSHub.registerCommand({
+          id: "console-rt",
+          name: "Console (RT)",
+          render() {
+            return `<div class="rcs-hub-empty">console-rt não veio do GitHub.</div>`;
+          },
+        });
+      }
+      if (!RCSHub.commands.has("network-rt")) {
+        RCSHub.registerCommand({
+          id: "network-rt",
+          name: "Network (RT)",
+          render() {
+            return `<div class="rcs-hub-empty">network-rt não veio do GitHub.</div>`;
+          },
+        });
+      }
+      RCSHub.ui.refreshSide && RCSHub.ui.refreshSide();
     }
   }
 
+  // expõe pra modal chamar
+  RCSHub._forceSync = () => syncManifest(true);
+
+  // ====== HOOK DE NETWORK (pra network-rt usar) ======
   (function instrumentNetwork() {
     const reqLog = [];
     const origOpen = XMLHttpRequest.prototype.open;
@@ -341,6 +415,7 @@
     RCSHub.networkLog = reqLog;
   })();
 
+  // ===== init =====
   createUI();
   syncManifest();
   setInterval(syncManifest, SYNC_INTERVAL);
