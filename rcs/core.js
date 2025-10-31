@@ -582,10 +582,11 @@
 
   // =============== FETCH MANIFEST ===============
   function fetchRemote(url) {
+    const busted = url + (url.includes("?") ? "&" : "?") + "_=" + Date.now();
     return new Promise(function (resolve, reject) {
       GM_xmlhttpRequest({
         method: "GET",
-        url: url,
+        url: busted,
         headers: { "Cache-Control": "no-cache" },
         onload: function (res) {
           if (res.status >= 200 && res.status < 300) resolve(res.responseText);
@@ -606,11 +607,21 @@
       if (Array.isArray(json.commands)) {
         for (const c of json.commands) {
           if (!c.entry) continue;
-          const code = await fetchRemote(c.entry);
-          const fn = new Function("RCSHub", code);
-          fn(RCSHub);
+          try {
+            const code = await fetchRemote(c.entry);
+            const fn = new Function("RCSHub", code);
+            fn(RCSHub);
+            pushConsole(">> cmd ok: " + (c.id || c.name || c.entry), "info");
+          } catch (err) {
+            pushConsole(
+              "!! cmd FAIL: " + (c.id || c.entry) + " — " + err.message,
+              "error"
+            );
+            RCSHub.log("cmd error", c, err);
+          }
         }
       }
+
       RCSHub.ui.refreshNav && RCSHub.ui.refreshNav();
       pushConsole(">> manifest sync ok", "info");
     } catch (e) {
