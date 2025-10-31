@@ -71,8 +71,8 @@
       justify-content: center;
     }
     .rcs-shell {
-      width: 980px;
-      height: 560px;
+      width: 1100px;
+      height: 600px;
       background: radial-gradient(circle at 20% 20%, rgba(12,14,16,1) 0%, rgba(8,9,11,0.9) 40%, rgba(5,5,7,0.75) 100%);
       border: 1px solid rgba(163, 166, 173, 0.12);
       border-radius: 20px;
@@ -82,7 +82,22 @@
       box-shadow: 0 24px 50px rgba(0,0,0,.45);
       backdrop-filter: blur(18px);
       color: var(--rcs-text);
+      position: relative;
+      transition: grid-template-columns .14s ease, width .14s ease;
     }
+    /* quando colapsar esquerda */
+    .rcs-shell.rcs-nav-collapsed {
+      grid-template-columns: 46px 1fr 230px;
+    }
+    /* quando colapsar direita */
+    .rcs-shell.rcs-side-collapsed {
+      grid-template-columns: 215px 1fr 32px;
+    }
+    /* quando colapsar as duas */
+    .rcs-shell.rcs-nav-collapsed.rcs-side-collapsed {
+      grid-template-columns: 46px 1fr 32px;
+    }
+
     .rcs-nav {
       background: radial-gradient(circle at 0% 0%, rgba(16,18,22,.9) 0%, rgba(14,15,18,0) 65%);
       border-right: 1px solid rgba(255,255,255,0.018);
@@ -90,7 +105,25 @@
       flex-direction: column;
       gap: 6px;
       padding: 14px 10px 10px 12px;
+      position: relative;
     }
+    .rcs-nav-inner {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    /* esconde conteúdo quando colapsado */
+    .rcs-shell.rcs-nav-collapsed .rcs-nav-inner > *:not(.rcs-nav-title) {
+      display: none !important;
+    }
+    .rcs-shell.rcs-nav-collapsed .rcs-nav-title small {
+      display: none;
+    }
+    .rcs-shell.rcs-nav-collapsed .rcs-nav {
+      padding-right: 4px;
+      padding-left: 6px;
+    }
+
     .rcs-nav-title {
       font-size: 13px;
       font-weight: 600;
@@ -98,6 +131,7 @@
       gap: 8px;
       align-items: center;
       margin-bottom: 6px;
+      justify-content: space-between;
     }
     .rcs-nav-title small {
       font-size: 9px;
@@ -229,6 +263,7 @@
     .rcs-console-line { display:flex;gap:6px; }
     .rcs-console-prompt { color: rgba(148,163,184,.55); }
     .rcs-console-text { color: #e2e8f0; white-space: pre-wrap; word-break: break-word; }
+
     .rcs-side {
       background: radial-gradient(circle at 50% 50%, rgba(8,9,11,0.6) 0%, rgba(6,7,9,0.1) 75%);
       border-left: 1px solid rgba(255,255,255,0.015);
@@ -236,6 +271,7 @@
       flex-direction: column;
       gap: 10px;
       padding: 10px 10px 8px 10px;
+      position: relative;
     }
     .rcs-side-title {
       font-size: 10.5px;
@@ -266,6 +302,52 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+
+    /* colapso da barra lateral direita */
+    .rcs-shell.rcs-side-collapsed .rcs-side-title,
+    .rcs-shell.rcs-side-collapsed .rcs-side-box {
+      display: none !important;
+    }
+    .rcs-shell.rcs-side-collapsed .rcs-side {
+      padding: 10px 4px 8px 4px;
+    }
+
+    /* botões de colapso */
+    .rcs-collapse-btn {
+      position: absolute;
+      top: 9px;
+      width: 20px;
+      height: 20px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.08);
+      background: rgba(15,15,15,.25);
+      color: #fff;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      backdrop-filter: blur(6px);
+      transition: .12s ease;
+    }
+    .rcs-collapse-btn:hover {
+      background: rgba(168,85,247,.55);
+    }
+    .rcs-nav-toggle {
+      right: -10px;
+    }
+    .rcs-side-toggle {
+      left: -10px;
+    }
+    .rcs-shell.rcs-nav-collapsed .rcs-nav-toggle {
+      right: -10px;
+      transform: rotate(180deg);
+    }
+    .rcs-shell.rcs-side-collapsed .rcs-side-toggle {
+      left: -10px;
+      transform: rotate(180deg);
+    }
+
     .rcs-quick-btn {
       width: 100%;
       background: rgba(255,255,255,0.01);
@@ -293,12 +375,15 @@
     const ov = document.createElement("div");
     ov.className = "rcs-overlay";
     ov.innerHTML = `
-      <div class="rcs-shell">
+      <div class="rcs-shell" id="rcs-shell">
         <div class="rcs-nav" id="rcs-nav">
-          <div class="rcs-nav-title">
-            RCS HUB
-            <small>${location.hostname}</small>
+          <div class="rcs-nav-inner" id="rcs-nav-inner">
+            <div class="rcs-nav-title">
+              <span>RCS HUB</span>
+              <small>${location.hostname}</small>
+            </div>
           </div>
+          <button class="rcs-collapse-btn rcs-nav-toggle" id="rcs-nav-toggle">◀</button>
         </div>
         <div class="rcs-main">
           <div class="rcs-topbar">
@@ -339,10 +424,13 @@
               <button class="rcs-quick-btn" data-q="clear">clear()</button>
             </div>
           </div>
+          <button class="rcs-collapse-btn rcs-side-toggle" id="rcs-side-toggle">▶</button>
         </div>
       </div>
     `;
     document.body.appendChild(ov);
+
+    const shell = ov.querySelector("#rcs-shell");
 
     fab.addEventListener("click", function () {
       ov.style.display = "flex";
@@ -359,6 +447,16 @@
 
     ov.querySelector("#rcs-btn-sync").addEventListener("click", function () {
       syncManifest(true);
+    });
+
+    // colapso ESQUERDA
+    ov.querySelector("#rcs-nav-toggle").addEventListener("click", function () {
+      shell.classList.toggle("rcs-nav-collapsed");
+    });
+
+    // colapso DIREITA
+    ov.querySelector("#rcs-side-toggle").addEventListener("click", function () {
+      shell.classList.toggle("rcs-side-collapsed");
     });
 
     // quick actions
@@ -380,7 +478,8 @@
 
     // save refs
     RCSHub.ui.overlay = ov;
-    RCSHub.ui.nav = ov.querySelector("#rcs-nav");
+    RCSHub.ui.shell = shell;
+    RCSHub.ui.nav = ov.querySelector("#rcs-nav-inner");
     RCSHub.ui.body = ov.querySelector("#rcs-body");
     RCSHub.ui.title = ov.querySelector("#rcs-top-title");
     RCSHub.ui.refreshNav = buildNav;
@@ -394,7 +493,7 @@
       type: type || "log",
       ts: Date.now(),
     });
-    // aqui continua limitado a 40 pra não matar DOM do overview
+    // continua limitado a 40
     if (RCSHub.__miniBuffer.length > 40) RCSHub.__miniBuffer.pop();
     if (RCSHub.__currentView === "overview") renderOverview();
   }
@@ -402,6 +501,8 @@
   // =============== NAV ===============
   function buildNav() {
     const nav = RCSHub.ui.nav;
+    if (!nav) return;
+
     const list = document.createElement("div");
     list.style.display = "flex";
     list.style.flexDirection = "column";
@@ -452,9 +553,13 @@
       list.appendChild(btn);
     });
 
-    Array.from(nav.querySelectorAll(".rcs-nav-btn")).forEach(function (el) {
-      el.remove();
-    });
+    // limpa e poe de novo
+    nav.innerHTML = `
+      <div class="rcs-nav-title">
+        <span>RCS HUB</span>
+        <small>${location.hostname}</small>
+      </div>
+    `;
     nav.appendChild(list);
 
     showView("overview");
