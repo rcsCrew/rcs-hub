@@ -13,15 +13,15 @@
     manifest: null,
     ui: {},
     debug: true,
-    log(...a) {
-      if (this.debug) console.log("[RCS-HUB]", ...a);
+    log: function () {
+      if (this.debug) console.log("[RCS-HUB]", ...arguments);
     },
-    registerCommand(def) {
+    registerCommand: function (def) {
       if (!def || !def.id) return;
       this.commands.set(def.id, def);
       this.ui.refreshNav && this.ui.refreshNav();
     },
-    injectCSS(css) {
+    injectCSS: function (css) {
       const el = document.createElement("style");
       el.textContent = css;
       document.head.appendChild(el);
@@ -83,7 +83,6 @@
       backdrop-filter: blur(18px);
       color: var(--rcs-text);
     }
-    /* left nav */
     .rcs-nav {
       background: radial-gradient(circle at 0% 0%, rgba(16,18,22,.9) 0%, rgba(14,15,18,0) 65%);
       border-right: 1px solid rgba(255,255,255,0.018);
@@ -126,7 +125,6 @@
       background: rgba(144,148,255,0.12);
       color: #fff;
     }
-    /* middle panel (body) */
     .rcs-main {
       display: flex;
       flex-direction: column;
@@ -175,7 +173,6 @@
       overflow-y: auto;
       position: relative;
     }
-    /* grid background style */
     .rcs-body::before {
       content: "";
       position: absolute;
@@ -226,22 +223,12 @@
       margin-top: 6px;
       min-height: 210px;
       padding: 8px 8px 8px 8px;
-      font-family: ui-monospace, SFMono-Regular, SFMono-Regular, SFMono-Regular, SFMono-Regular, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
       font-size: 11px;
     }
-    .rcs-console-line {
-      display: flex;
-      gap: 6px;
-    }
-    .rcs-console-prompt {
-      color: rgba(148,163,184,.55);
-    }
-    .rcs-console-text {
-      color: #e2e8f0;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-    /* right panel */
+    .rcs-console-line { display:flex;gap:6px; }
+    .rcs-console-prompt { color: rgba(148,163,184,.55); }
+    .rcs-console-text { color: #e2e8f0; white-space: pre-wrap; word-break: break-word; }
     .rcs-side {
       background: radial-gradient(circle at 50% 50%, rgba(8,9,11,0.6) 0%, rgba(6,7,9,0.1) 75%);
       border-left: 1px solid rgba(255,255,255,0.015);
@@ -269,11 +256,7 @@
       gap: 6px;
       margin-bottom: 3px;
     }
-    .rcs-side-key {
-      color: rgba(255,255,255,.45);
-      font-size: 10px;
-      text-transform: lowercase;
-    }
+    .rcs-side-key { color: rgba(255,255,255,.45); font-size: 10px; }
     .rcs-side-val {
       font-size: 10px;
       color: #fff;
@@ -295,10 +278,7 @@
       cursor: pointer;
       transition: .12s;
     }
-    .rcs-quick-btn:hover {
-      background: rgba(168,85,247,.12);
-      color: #fff;
-    }
+    .rcs-quick-btn:hover { background: rgba(168,85,247,.12); color: #fff; }
   `);
 
   // =============== UI ===============
@@ -319,7 +299,6 @@
             RCS HUB
             <small>${location.hostname}</small>
           </div>
-          <!-- nav will be injected -->
         </div>
         <div class="rcs-main">
           <div class="rcs-topbar">
@@ -365,26 +344,26 @@
     `;
     document.body.appendChild(ov);
 
-    fab.addEventListener("click", () => {
+    fab.addEventListener("click", function () {
       ov.style.display = "flex";
     });
-    ov.querySelector("#rcs-btn-close").addEventListener("click", () => {
+    ov.querySelector("#rcs-btn-close").addEventListener("click", function () {
       ov.style.display = "none";
     });
-    ov.addEventListener("click", (e) => {
+    ov.addEventListener("click", function (e) {
       if (e.target === ov) ov.style.display = "none";
     });
-    document.addEventListener("keydown", (e) => {
+    document.addEventListener("keydown", function (e) {
       if (e.key === "Escape") ov.style.display = "none";
     });
 
-    ov.querySelector("#rcs-btn-sync").addEventListener("click", () => {
+    ov.querySelector("#rcs-btn-sync").addEventListener("click", function () {
       syncManifest(true);
     });
 
     // quick actions
-    ov.querySelectorAll(".rcs-quick-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
+    ov.querySelectorAll(".rcs-quick-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
         const q = btn.dataset.q;
         if (q === "ping") {
           pushConsole(">> ping()", "info");
@@ -408,11 +387,15 @@
   }
 
   // =============== console mini do overview ===============
-  function pushConsole(msg, type = "log") {
+  function pushConsole(msg, type) {
     if (!RCSHub.__miniBuffer) RCSHub.__miniBuffer = [];
-    RCSHub.__miniBuffer.unshift({ msg, type, ts: Date.now() });
+    RCSHub.__miniBuffer.unshift({
+      msg: msg,
+      type: type || "log",
+      ts: Date.now(),
+    });
+    // aqui continua limitado a 40 pra não matar DOM do overview
     if (RCSHub.__miniBuffer.length > 40) RCSHub.__miniBuffer.pop();
-    // se estiver no overview, re-render
     if (RCSHub.__currentView === "overview") renderOverview();
   }
 
@@ -420,40 +403,34 @@
   function buildNav() {
     const nav = RCSHub.ui.nav;
     const list = document.createElement("div");
-
-    // sempre teremos overview
-    const items = [
-      { id: "overview", label: "/overview", sub: "status" },
-      { id: "console", label: "/console", sub: "runtime", needs: "console-rt" },
-      {
-        id: "network",
-        label: "/network",
-        sub: "requisições",
-        needs: "network-rt",
-      },
-      // placeholders
-      { id: "config", label: "/config", sub: "prefs", disabled: true },
-    ];
-
     list.style.display = "flex";
     list.style.flexDirection = "column";
     list.style.gap = "4px";
 
-    items.forEach((item, idx) => {
+    const items = [
+      { id: "overview", label: "/overview", sub: "status" },
+      { id: "console", label: "/console", sub: "runtime" },
+      { id: "network", label: "/network", sub: "requisições" },
+      { id: "config", label: "/config", sub: "prefs", disabled: true },
+    ];
+
+    items.forEach(function (item, idx) {
       const btn = document.createElement("button");
       btn.className = "rcs-nav-btn" + (idx === 0 ? " active" : "");
       btn.dataset.view = item.id;
       btn.disabled = !!item.disabled;
       btn.innerHTML = `
-        <span style="width:18px;text-align:center;">${
-          item.id === "overview"
-            ? "●"
-            : item.id === "console"
-            ? "⌘"
-            : item.id === "network"
-            ? "⟲"
-            : "•"
-        }</span>
+        <span style="width:18px;text-align:center;">
+          ${
+            item.id === "overview"
+              ? "●"
+              : item.id === "console"
+              ? "⌘"
+              : item.id === "network"
+              ? "⟲"
+              : "•"
+          }
+        </span>
         <div style="display:flex;flex-direction:column;align-items:flex-start;">
           <span>${item.label}</span>
           <small>${item.sub || ""}</small>
@@ -463,10 +440,10 @@
         btn.style.opacity = 0.35;
         btn.style.cursor = "not-allowed";
       } else {
-        btn.addEventListener("click", () => {
-          nav
-            .querySelectorAll(".rcs-nav-btn")
-            .forEach((b) => b.classList.remove("active"));
+        btn.addEventListener("click", function () {
+          nav.querySelectorAll(".rcs-nav-btn").forEach(function (b) {
+            b.classList.remove("active");
+          });
           btn.classList.add("active");
           showView(item.id);
         });
@@ -474,14 +451,11 @@
       list.appendChild(btn);
     });
 
-    // clear old and append
-    // remove velhos
-    Array.from(nav.querySelectorAll(".rcs-nav-btn")).forEach((el) =>
-      el.remove()
-    );
+    Array.from(nav.querySelectorAll(".rcs-nav-btn")).forEach(function (el) {
+      el.remove();
+    });
     nav.appendChild(list);
 
-    // render default
     showView("overview");
   }
 
@@ -503,8 +477,8 @@
       return;
     }
 
-    // fallback
-    RCSHub.ui.body.innerHTML = `<div class="rcs-hub-empty">view ${view} não implementada.</div>`;
+    RCSHub.ui.body.innerHTML =
+      '<div class="rcs-hub-empty">view ' + view + " não implementada.</div>";
   }
 
   function renderOverview() {
@@ -528,22 +502,24 @@
           <div style="font-size:9px;color:rgba(226,232,240,.25);margin-top:3px;">tampermonkey</div>
         </div>
       </div>
-      <div class="rcs-console-box" id="rcs-mini-console">
-        <!-- lines -->
-      </div>
+      <div class="rcs-console-box" id="rcs-mini-console"></div>
     `;
 
-    // preencher mini console
     const con = body.querySelector("#rcs-mini-console");
     const buf = RCSHub.__miniBuffer || [];
     if (!buf.length) {
-      con.innerHTML = `<div class="rcs-console-line"><span class="rcs-console-prompt">&gt;&gt;</span><span class="rcs-console-text"> boot RCS HUB...</span></div>
-      <div class="rcs-console-line"><span class="rcs-console-prompt">&gt;&gt;</span><span class="rcs-console-text"> env: dark-console</span></div>
-      <div class="rcs-console-line"><span class="rcs-console-prompt">&gt;&gt;</span><span class="rcs-console-text"> ready.</span></div>`;
+      con.innerHTML =
+        '<div class="rcs-console-line"><span class="rcs-console-prompt">&gt;&gt;</span><span class="rcs-console-text"> boot RCS HUB...</span></div>' +
+        '<div class="rcs-console-line"><span class="rcs-console-prompt">&gt;&gt;</span><span class="rcs-console-text"> env: dark-console</span></div>' +
+        '<div class="rcs-console-line"><span class="rcs-console-prompt">&gt;&gt;</span><span class="rcs-console-text"> ready.</span></div>';
     } else {
       con.innerHTML = buf
-        .map((l) => {
-          return `<div class="rcs-console-line"><span class="rcs-console-prompt">&gt;&gt;</span><span class="rcs-console-text">${l.msg}</span></div>`;
+        .map(function (l) {
+          return (
+            '<div class="rcs-console-line"><span class="rcs-console-prompt">&gt;&gt;</span><span class="rcs-console-text">' +
+            l.msg +
+            "</span></div>"
+          );
         })
         .join("");
     }
@@ -551,7 +527,6 @@
 
   function renderConsoleView() {
     const body = RCSHub.ui.body;
-    // se tiver o comando console-rt, usa ele
     const cmd = RCSHub.commands.get("console-rt");
     if (cmd && typeof cmd.render === "function") {
       const html = cmd.render();
@@ -563,7 +538,8 @@
       }
       cmd.onShow && cmd.onShow(body);
     } else {
-      body.innerHTML = `<div class="rcs-hub-empty">console-rt não carregou do GitHub.</div>`;
+      body.innerHTML =
+        '<div style="color:#fff;font-size:12px;">console-rt não carregou do GitHub.</div>';
     }
   }
 
@@ -580,18 +556,19 @@
       }
       cmd.onShow && cmd.onShow(body);
     } else {
-      body.innerHTML = `<div class="rcs-hub-empty">network-rt não carregou do GitHub.</div>`;
+      body.innerHTML =
+        '<div style="color:#fff;font-size:12px;">network-rt não carregou do GitHub.</div>';
     }
   }
 
   // =============== FETCH MANIFEST ===============
   function fetchRemote(url) {
-    return new Promise((resolve, reject) => {
+    return new Promise(function (resolve, reject) {
       GM_xmlhttpRequest({
         method: "GET",
-        url,
+        url: url,
         headers: { "Cache-Control": "no-cache" },
-        onload: (res) => {
+        onload: function (res) {
           if (res.status >= 200 && res.status < 300) resolve(res.responseText);
           else reject(new Error("HTTP " + res.status));
         },
@@ -619,14 +596,13 @@
       pushConsole(">> manifest sync ok", "info");
     } catch (e) {
       RCSHub.log("manifest fail", e);
-      // fallback escreve uma linha no mini console
       pushConsole("!! manifest error — usando fallback", "error");
       if (!RCSHub.commands.has("console-rt")) {
         RCSHub.registerCommand({
           id: "console-rt",
           name: "Console (RT)",
-          render() {
-            return `<div style="color:#fff;font-size:12px;">fallback console</div>`;
+          render: function () {
+            return '<div style="color:#fff;font-size:12px;">fallback console</div>';
           },
         });
       }
@@ -634,8 +610,8 @@
         RCSHub.registerCommand({
           id: "network-rt",
           name: "Network (RT)",
-          render() {
-            return `<div style="color:#fff;font-size:12px;">fallback network</div>`;
+          render: function () {
+            return '<div style="color:#fff;font-size:12px;">fallback network</div>';
           },
         });
       }
@@ -643,51 +619,50 @@
     }
   }
 
-  // expor pra botões
-  RCSHub._forceSync = () => syncManifest(true);
+  // expor pra botão
+  RCSHub._forceSync = function () {
+    return syncManifest(true);
+  };
 
-  // =============== NETWORK HOOK (pra network-rt) ===============
-  // ====== NETWORK HOOK (append-only) ======
+  // =============== NETWORK HOOK (append-only) ===============
   (function instrumentNetwork() {
     const reqLog = RCSHub.networkLog || [];
     const origOpen = XMLHttpRequest.prototype.open;
     const origSend = XMLHttpRequest.prototype.send;
     let seq = RCSHub.__netSeq || 1;
 
-    XMLHttpRequest.prototype.open = function (method, url, ...rest) {
-      this.__rcs_meta = { method, url, ts: Date.now() };
-      return origOpen.call(this, method, url, ...rest);
+    XMLHttpRequest.prototype.open = function (method, url) {
+      this.__rcs_meta = { method: method, url: url, ts: Date.now() };
+      return origOpen.apply(this, arguments);
     };
 
     XMLHttpRequest.prototype.send = function (body) {
       const meta = this.__rcs_meta;
       const start = Date.now();
-      this.addEventListener("loadend", () => {
+      this.addEventListener("loadend", function () {
         const entry = {
           __id: seq++,
-          ...meta,
+          method: (meta && meta.method) || "GET",
+          url: (meta && meta.url) || "",
+          ts: (meta && meta.ts) || Date.now(),
           duration: Date.now() - start,
           status: this.status,
           ok: this.status >= 200 && this.status < 300,
         };
-        reqLog.unshift(entry); // EMPILHA
-        // 👇 não tem pop aqui
-        // se quiser um limite de segurança, coloca:
-        // if (reqLog.length > 5000) reqLog.pop();
-        // joga no console se der ruim
+        reqLog.unshift(entry);
         if (
           !entry.ok &&
           window.RCSHub &&
           Array.isArray(window.RCSHub.consoleBuffer)
         ) {
           window.RCSHub.consoleBuffer.unshift({
-            id: "net-" + entry.__id,
+            __id: "net-" + entry.__id,
             type: "network-error",
             ts: entry.ts,
             args: [
-              `${entry.method} ${entry.url}`,
-              `status ${entry.status}`,
-              `${entry.duration}ms`,
+              entry.method + " " + entry.url,
+              "status " + entry.status,
+              entry.duration + "ms",
             ],
             indent: 0,
           });
@@ -706,14 +681,17 @@
     const h = Math.floor(totalSec / 3600);
     const m = Math.floor((totalSec % 3600) / 60);
     const s = totalSec % 60;
-    return `${String(h).padStart(2, "0")}:${String(m).padStart(
-      2,
-      "0"
-    )}:${String(s).padStart(2, "0")}`;
+    return (
+      String(h).padStart(2, "0") +
+      ":" +
+      String(m).padStart(2, "0") +
+      ":" +
+      String(s).padStart(2, "0")
+    );
   }
 
   // relógio sessão
-  setInterval(() => {
+  setInterval(function () {
     const el = document.querySelector("#rcs-ts-val");
     const up = document.querySelector("#rcs-uptime");
     if (el) {
