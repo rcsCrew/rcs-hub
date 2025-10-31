@@ -411,6 +411,7 @@
       { id: "overview", label: "/overview", sub: "status" },
       { id: "console", label: "/console", sub: "runtime" },
       { id: "network", label: "/network", sub: "requisições" },
+      { id: "sql", label: "/sql", sub: "assistente", needs: "sql-assistant" },
       { id: "config", label: "/config", sub: "prefs", disabled: true },
     ];
 
@@ -475,6 +476,24 @@
     if (view === "network") {
       renderNetworkView();
       return;
+    }
+    if (view === "sql") {
+      const cmd = RCSHub.commands.get("sql-assistant");
+      if (cmd && typeof cmd.render === "function") {
+        const html = cmd.render();
+        const body = RCSHub.ui.body;
+        if (typeof html === "string") {
+          body.innerHTML = html;
+        } else {
+          body.innerHTML = "";
+          body.appendChild(html);
+        }
+        cmd.onShow && cmd.onShow(body);
+        return;
+      } else {
+        RCSHub.ui.body.innerHTML = `<div style="color:#fff;font-size:12px;">sql-assistant não carregou do GitHub.</div>`;
+        return;
+      }
     }
 
     RCSHub.ui.body.innerHTML =

@@ -15,6 +15,10 @@
       "id": "network-rt",
       "name": "Network (RT)",
       "entry": "https://raw.githubusercontent.com/rcsCrew/rcs-hub/main/commands/network-rt.js"
+    },
+    {
+      "id": "sql-assistant",
+      "entry": "https://raw.githubusercontent.com/rcsCrew/rcs-hub/main/commands/sql-assistant.js"
     }
   ],
   "modals": [
